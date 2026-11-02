@@ -1,6 +1,7 @@
 """SQLAlchemy：引擎、会话、模型。一期启动时建表（简化）。"""
 import os
-from datetime import date, datetime
+import datetime as dt
+from datetime import datetime
 
 from sqlalchemy import JSON, create_engine, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -56,6 +57,47 @@ class Document(Base):
     chunk_count: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+
+class WorkoutLog(Base):
+    """一次训练记录：exercises 为 JSON 动作列表 [{"name","weight","sets","reps"}]，快速模式只填 name。"""
+
+    __tablename__ = "workout_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    date: Mapped[dt.date] = mapped_column(index=True)
+    exercises: Mapped[list] = mapped_column(JSON, default=list)
+    note: Mapped[str | None] = mapped_column(String(500), default=None)   # 感受
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class BodyMetric(Base):
+    """体重/体脂等体征记录（body_fat/sleep_hours/soreness 预留，一期不参与统计）。"""
+
+    __tablename__ = "body_metric"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    date: Mapped[dt.date] = mapped_column(index=True)
+    weight: Mapped[float | None] = mapped_column(default=None)
+    body_fat: Mapped[float | None] = mapped_column(default=None)   # 预留
+    sleep_hours: Mapped[float | None] = mapped_column(default=None)  # 预留（二期恢复线）
+    soreness: Mapped[int | None] = mapped_column(default=None)      # 预留：1~5 酸痛度
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class DietLog(Base):
+    """饮食记录：content 记吃了什么，avoid 为该次临时忌口/标签。"""
+
+    __tablename__ = "diet_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    date: Mapped[dt.date] = mapped_column(index=True)
+    content: Mapped[str] = mapped_column(String(2000))
+    avoid: Mapped[list | None] = mapped_column(JSON, default=None)   # ["牛奶", ...]
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
 
 def get_db():
