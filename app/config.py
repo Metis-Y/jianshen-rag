@@ -1,5 +1,9 @@
-"""集中配置：一律走环境变量，带安全默认值。"""
+"""集中配置：优先读项目根目录 .env（见 .env.example），其次系统环境变量。"""
 import os
+
+from dotenv import load_dotenv
+
+load_dotenv()  # 加载 D:ag_project\jianshen-rag\.env，不存在则跳过
 
 # 安全
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
