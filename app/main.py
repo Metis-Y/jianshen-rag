@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app import resp
 from app.db import Base, engine
-from app.routers import auth
+from app.routers import auth, documents
 
 log = logging.getLogger("app")
 
@@ -23,6 +23,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="jianshen-rag", lifespan=lifespan)
 app.include_router(auth.router)
+app.include_router(documents.router)
 
 
 @app.exception_handler(HTTPException)

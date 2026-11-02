@@ -19,6 +19,7 @@ TOPK = int(os.getenv("TOPK", "5"))
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "20"))
 
 # 存储
+DATA_DIR = os.getenv("DATA_DIR", "./data")
 SQLITE_PATH = os.getenv("SQLITE_PATH", "./data/jianshen.db")
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./data/uploads")
 CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")

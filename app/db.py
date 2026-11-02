@@ -40,6 +40,24 @@ class Preference(Base):
     updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
 
 
+class Document(Base):
+    """训练计划/营养资料等文档（状态机：PROCESSING → READY / FAILED）。"""
+
+    __tablename__ = "document"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    file_md5: Mapped[str] = mapped_column(String(32), index=True)
+    size_bytes: Mapped[int] = mapped_column(default=0)
+    category: Mapped[str] = mapped_column(String(16), default="other")   # plan / diet / other
+    status: Mapped[str] = mapped_column(String(16), default="PROCESSING")
+    fail_reason: Mapped[str | None] = mapped_column(String(500), default=None)
+    chunk_count: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+    updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
+
+
 def get_db():
     db = SessionLocal()
     try:
