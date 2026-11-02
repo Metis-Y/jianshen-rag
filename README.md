@@ -43,7 +43,7 @@
 | 模型 | 硅基流动 API（bge-m3 Embedding + DeepSeek/Qwen） |
 | 认证 | JWT（pyjwt，单用户体系） |
 | 流式 | SSE（FastAPI StreamingResponse） |
-| 前端 | Vue 3 + Vite + nginx（8090 反代 8000）| 与 ShowTicket 同套工程范式；SSE 已配置 proxy_buffering off |
+| 前端 | Vue 3 + Vite + **Element Plus** + nginx（8090 反代 8000）| 与 ShowTicket 同套工程范式；SSE 已配置 proxy_buffering off |
 
 **刻意不做（一期画线）**：图表库、OCR、动作视觉纠错、混合检索、评估、消息队列、RBAC/团队共享。
 
