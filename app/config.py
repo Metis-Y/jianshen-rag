@@ -1,0 +1,24 @@
+"""集中配置：一律走环境变量，带安全默认值。"""
+import os
+
+# 安全
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
+JWT_ALGO = "HS256"
+JWT_TTL_HOURS = int(os.getenv("JWT_TTL_HOURS", "72"))
+
+# 模型
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")   # 必填，D4 才真正依赖
+SILICONFLOW_BASE_URL = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "deepseek-ai/DeepSeek-V3")
+
+# 检索/切分 超参
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "80"))
+TOPK = int(os.getenv("TOPK", "5"))
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "20"))
+
+# 存储
+SQLITE_PATH = os.getenv("SQLITE_PATH", "./data/jianshen.db")
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "./data/uploads")
+CHROMA_DB_PATH = os.getenv("CHROMA_DB_PATH", "./chroma_db")

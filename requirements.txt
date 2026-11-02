@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+pyjwt
+bcrypt
+python-multipart
+# D2 起用
+langchain-community
+langchain-text-splitters
+chromadb
+openai
+pypdf
+python-docx
