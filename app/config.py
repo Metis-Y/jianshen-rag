@@ -10,10 +10,15 @@ JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
 JWT_ALGO = "HS256"
 JWT_TTL_HOURS = int(os.getenv("JWT_TTL_HOURS", "72"))
 
-# 模型
-SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")   # 必填，D4 才真正依赖
-SILICONFLOW_BASE_URL = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1")
+# 模型：embedding 与 chat 各自独立配置，支持跨平台混搭
+SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")   # 默认凭证（两个平台未单独配时用它）
+
+EMBEDDING_API_KEY = os.getenv("EMBEDDING_API_KEY", SILICONFLOW_API_KEY)
+EMBEDDING_BASE_URL = os.getenv("EMBEDDING_BASE_URL", "https://api.siliconflow.cn/v1")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
+
+CHAT_API_KEY = os.getenv("CHAT_API_KEY", SILICONFLOW_API_KEY)
+CHAT_BASE_URL = os.getenv("CHAT_BASE_URL", "https://api.siliconflow.cn/v1")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "deepseek-ai/DeepSeek-V3")
 
 # 检索/切分 超参
