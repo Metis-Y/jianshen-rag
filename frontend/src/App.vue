@@ -48,6 +48,12 @@ watch(() => route.path, refreshUser)
         >
           资料
         </RouterLink>
+        <RouterLink
+          to="/records"
+          :class="{ active: route.path === '/records' }"
+        >
+          记录
+        </RouterLink>
       </nav>
     </div>
     <div class="nav-right">
