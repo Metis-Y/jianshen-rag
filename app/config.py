@@ -3,8 +3,7 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv()  # 加载 D:
-ag_project\jianshen-rag\.env，不存在则跳过
+load_dotenv()  # 加载项目根目录的 .env（见 .env.example），不存在则跳过
 
 # 安全
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
