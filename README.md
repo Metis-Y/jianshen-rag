@@ -43,7 +43,7 @@
 | 模型 | 硅基流动 API（bge-m3 Embedding + DeepSeek/Qwen） |
 | 认证 | JWT（pyjwt，单用户体系） |
 | 流式 | SSE（FastAPI StreamingResponse） |
-| 前端 | Vue 3 + Vite，nginx 反代（8090 → 8000） |
+| 前端 | 单页 artifact（Anthropic artifacts-builder 官方 skill 规范，React + Tailwind，无构建） | FastAPI 直接静态托管 |
 
 **刻意不做（一期画线）**：图表库、OCR、动作视觉纠错、混合检索、评估、消息队列、RBAC/团队共享。
 
