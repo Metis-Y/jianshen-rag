@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 运行时数据
+chroma_db/
+data/uploads/
+*.db
+*.sqlite3
+
+# IDE / 系统
+.idea/
+.vscode/
+.DS_Store
+.env
