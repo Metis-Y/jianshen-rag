@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import api from '../api.js'
 
 const router = useRouter()
@@ -17,7 +18,7 @@ function switchMode(next) {
 
 async function submit() {
   if (!username.value.trim() || !password.value) {
-    alert('用户名和密码不能为空')
+    ElMessage.warning('用户名和密码不能为空')
     return
   }
   loading.value = true
@@ -27,7 +28,7 @@ async function submit() {
         username: username.value.trim(),
         password: password.value
       })
-      alert('注册成功，请登录')
+      ElMessage.success('注册成功，请登录')
       // 切回登录模式，保留用户名，请用户重新输入密码登录
       switchMode('login')
     } else {
@@ -48,7 +49,7 @@ async function submit() {
 
 <template>
   <div class="page-center">
-    <div class="card">
+    <el-card class="login-card">
       <h2>{{ mode === 'login' ? '登录' : '注册' }}</h2>
       <p class="hint" style="margin-bottom: 20px">
         健身管家 · {{ mode === 'login' ? '欢迎回来' : '创建新账号' }}
@@ -76,35 +77,51 @@ async function submit() {
       <form @submit.prevent="submit">
         <div class="field">
           <label for="username">用户名</label>
-          <input
+          <el-input
             id="username"
             v-model="username"
-            class="input"
-            type="text"
             placeholder="请输入用户名"
             autocomplete="username"
           />
         </div>
         <div class="field">
           <label for="password">密码</label>
-          <input
+          <el-input
             id="password"
             v-model="password"
-            class="input"
             type="password"
+            show-password
             placeholder="请输入密码"
             autocomplete="current-password"
           />
         </div>
-        <button class="btn" type="submit" :disabled="loading">
+        <el-button
+          class="submit-btn"
+          type="primary"
+          native-type="submit"
+          :loading="loading"
+        >
           {{ loading ? '提交中…' : mode === 'login' ? '登录' : '注册' }}
-        </button>
+        </el-button>
       </form>
-    </div>
+    </el-card>
   </div>
 </template>
 
 <style scoped>
+.login-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.login-card :deep(.el-card__body) {
+  padding: 32px;
+}
+
+.submit-btn {
+  width: 100%;
+}
+
 .tabs {
   display: flex;
   margin-bottom: 20px;

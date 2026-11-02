@@ -38,10 +38,21 @@ watch(() => route.path, refreshUser)
 
 <template>
   <header v-if="username" class="nav">
-    <span class="nav-title">健身管家</span>
+    <div class="nav-left">
+      <span class="nav-title">健身管家</span>
+      <nav class="nav-links">
+        <RouterLink to="/" :class="{ active: route.path === '/' }">首页</RouterLink>
+        <RouterLink
+          to="/documents"
+          :class="{ active: route.path === '/documents' }"
+        >
+          资料
+        </RouterLink>
+      </nav>
+    </div>
     <div class="nav-right">
       <span>{{ username }}</span>
-      <button class="btn btn-small" @click="logout">退出</button>
+      <el-button size="small" class="logout-btn" @click="logout">退出</el-button>
     </div>
   </header>
   <router-view />
@@ -58,8 +69,35 @@ watch(() => route.path, refreshUser)
   color: #fff;
 }
 
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .nav-title {
   font-size: 18px;
+  font-weight: 600;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.nav-links a {
+  color: #9ca3af;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.nav-links a:hover {
+  color: #fff;
+}
+
+.nav-links a.active {
+  color: #fff;
   font-weight: 600;
 }
 
@@ -69,14 +107,14 @@ watch(() => route.path, refreshUser)
   gap: 16px;
 }
 
-.btn.btn-small {
-  width: auto;
-  height: 32px;
-  font-size: 13px;
+.nav-right .el-button.logout-btn {
   background: rgba(255, 255, 255, 0.15);
+  border: none;
+  color: #fff;
 }
 
-.btn.btn-small:hover {
+.nav-right .el-button.logout-btn:hover {
   background: rgba(255, 255, 255, 0.25);
+  color: #fff;
 }
 </style>

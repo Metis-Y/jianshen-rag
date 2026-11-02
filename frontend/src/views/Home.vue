@@ -14,6 +14,10 @@ onMounted(async () => {
   }
 })
 
+function goDocuments() {
+  router.push('/documents')
+}
+
 function logout() {
   localStorage.removeItem('token')
   router.replace('/login')
@@ -22,16 +26,41 @@ function logout() {
 
 <template>
   <div class="page-center">
-    <div class="card">
+    <el-card class="home-card">
       <h2>欢迎，{{ (me && me.username) || '用户' }}</h2>
-      <p class="hint" style="margin: 12px 0 24px">资料上传与问答功能开发中</p>
+      <p class="hint" style="margin: 12px 0 24px">训练记录开发中</p>
       <p v-if="me && me.goal" class="hint" style="margin-bottom: 8px">
         目标：{{ me.goal }}
       </p>
       <p v-if="me && me.allergies" class="hint" style="margin-bottom: 24px">
         忌口/过敏：{{ me.allergies }}
       </p>
-      <button class="btn" @click="logout">退出登录</button>
-    </div>
+      <div class="actions">
+        <el-button type="primary" @click="goDocuments">资料管理</el-button>
+        <el-button @click="logout">退出登录</el-button>
+      </div>
+    </el-card>
   </div>
 </template>
+
+<style scoped>
+.home-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.home-card :deep(.el-card__body) {
+  padding: 32px;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.actions .el-button {
+  width: 100%;
+  margin-left: 0;
+}
+</style>
