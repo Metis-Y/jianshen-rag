@@ -10,4 +10,5 @@ langchain-text-splitters
 chromadb
 openai
 pypdf
-python-docxpython-dotenv
+python-docx
+python-dotenv
