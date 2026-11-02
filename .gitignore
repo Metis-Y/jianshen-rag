@@ -15,3 +15,5 @@ data/uploads/
 .vscode/
 .DS_Store
 .env
+# 运行时数据
+/data/
