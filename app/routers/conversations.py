@@ -26,12 +26,13 @@ def _get_owned_conv(db: Session, user: User, conv_id: int) -> Conversation:
     return conv
 
 
-def _message_out(m: Message) -> dict:
+def _message_out(m: Message, feedback: bool | None = None) -> dict:
     return {
         "id": m.id,
         "role": m.role,
         "content": m.content,
         "citations": m.citations or [],
+        "feedback": feedback,
         "createdAt": m.created_at.isoformat(),
     }
 
@@ -79,7 +80,17 @@ def list_messages(
         .where(Message.conversation_id == conv.id)
         .order_by(Message.id.asc())
     ).all()
-    return resp.ok({"list": [_message_out(m) for m in rows]})
+    # 当前用户对各消息的反馈（true/false，未反馈为 null），供前端回显
+    fb_map: dict[int, bool] = {}
+    if rows:
+        fbs = db.scalars(
+            select(Feedback).where(
+                Feedback.message_id.in_([m.id for m in rows]),
+                Feedback.user_id == user.id,
+            )
+        ).all()
+        fb_map = {fb.message_id: fb.is_positive for fb in fbs}
+    return resp.ok({"list": [_message_out(m, fb_map.get(m.id)) for m in rows]})
 
 
 @router.delete("/{conv_id}")

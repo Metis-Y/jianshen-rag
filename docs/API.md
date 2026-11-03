@@ -202,7 +202,7 @@ data: {"conversationId":2,"messageId":9}
 | 方法 | 路径 | 入参 | 返回 |
 | --- | --- | --- | --- |
 | GET | /conversations?page=&size= | — | `{total, list:[{id,title,createdAt}]}` |
-| GET | /conversations/{id}/messages | — | `{list:[{id,role,content,citations,createdAt}]}` |
+| GET | /conversations/{id}/messages | — | `{list:[{id,role,content,citations,feedback,createdAt}]}`（feedback 为当前用户的反馈：true/false，未反馈 null） |
 | DELETE | /conversations/{id} | — | `{ "code": 1, "data": null }` |
 | POST | /messages/{id}/feedback | `{ "positive": true }` | `{ "code": 1, "data": null }` |
 
