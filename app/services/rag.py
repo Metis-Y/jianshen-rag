@@ -41,7 +41,8 @@ _SYSTEM_PROMPT = (
     "并在相关句子末尾标注资料编号（如 [1]）。\n"
     "2. 效果/进展类问题：必须使用【我的数据】中的真实数字作为依据，"
     "不得编造训练容量、体重等任何数据。\n"
-    "3. 【资料】中没有回答问题所需的内容时，直接回答“知识库中没有相关内容”。\n"
+    "3. 仅当【资料】和【我的数据】都不足以回答问题时，才直接回答“知识库中没有相关内容”；"
+    "已经用【我的数据】回答过的，不要再附加这句话。\n"
     "4. 回答使用中文，简明、条理清晰。"
 )
 
@@ -98,8 +99,19 @@ def _snapshot(db, user_id: int) -> dict:
         weight_delta = 0
 
     pref = db.get(Preference, user_id)
+    recent = db.scalars(
+        select(WorkoutLog)
+        .where(WorkoutLog.user_id == user_id)
+        .order_by(WorkoutLog.date.desc(), WorkoutLog.id.desc())
+        .limit(3)
+    ).all()
+    recent_sessions = [
+        f"{w.date.month}-{w.date.day}：{_num(exercise_volume(w.exercises))}kg"
+        for w in reversed(recent)
+    ]
     return {
         "volume30": volume30,
+        "recent_sessions": recent_sessions,
         "has_any_workout": has_any_workout,
         "latest_weight": latest_weight,
         "weight_delta": weight_delta,
@@ -123,6 +135,8 @@ def _my_data_block(snap: dict) -> str:
     lines: list[str] = []
     if snap["has_any_workout"]:
         lines.append(f"近30天训练总容量：{_num(snap['volume30'])}kg")
+    if snap.get("recent_sessions"):
+        lines.append("近3次训练（日期：容量）：" + "、".join(snap["recent_sessions"]))
     if snap["latest_weight"] is not None:
         delta = snap["weight_delta"]
         delta_txt = ("+" if delta > 0 else "") + str(delta)
