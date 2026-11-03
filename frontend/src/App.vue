@@ -42,6 +42,9 @@ watch(() => route.path, refreshUser)
       <span class="nav-title">健身管家</span>
       <nav class="nav-links">
         <RouterLink to="/" :class="{ active: route.path === '/' }">首页</RouterLink>
+        <RouterLink to="/chat" :class="{ active: route.path === '/chat' }">
+          问答
+        </RouterLink>
         <RouterLink
           to="/documents"
           :class="{ active: route.path === '/documents' }"
