@@ -1,0 +1,285 @@
+"""RAG 问答链路（D4）：检索 → 用户真实数据聚合 → 双块 Prompt → SSE 流式回答 → 落库。
+
+- SSE 帧统一由 sse() 拼接（JSON data 单行，不含裸换行）；
+- `event: done` 由路由层在生成器正常结束后补发，本模块通过 state 字典
+  回传落库后的 conversationId/messageId；中途 error 为终态（不再发 done）；
+- 生成器内检索/聚合/落库共用同一个 SessionLocal 会话（开在生成器线程里，
+  与请求依赖线程解耦），异常兜底记录日志、不影响已推流内容。
+"""
+import datetime as dt
+import json
+import logging
+from typing import Iterator
+
+from openai import OpenAI
+from sqlalchemy import select
+
+from app import config
+from app.db import (
+    BodyMetric,
+    Conversation,
+    Message,
+    Preference,
+    SessionLocal,
+    User,
+    WorkoutLog,
+)
+from app.routers.workouts import exercise_volume  # 复用容量聚合公式（weight×sets×reps）
+from app.services import index
+
+log = logging.getLogger("app")
+
+# 效果类问题关键词：命中任一 → 必须用【我的数据】真实数字回答
+_EFFECT_KEYWORDS = ("趋势", "进步", "变化", "记录", "体重", "容量", "最近", "这周", "上周")
+
+_NO_CONTENT = "知识库中没有相关内容"
+_NO_RECORDS = "记录不足，无法判断"
+
+_SYSTEM_PROMPT = (
+    "你是健身私教助手，请严格遵守以下回答规则：\n"
+    "1. 资料类问题：只能依据【资料】中的内容回答，不得编造资料中没有的信息，"
+    "并在相关句子末尾标注资料编号（如 [1]）。\n"
+    "2. 效果/进展类问题：必须使用【我的数据】中的真实数字作为依据，"
+    "不得编造训练容量、体重等任何数据。\n"
+    "3. 【资料】中没有回答问题所需的内容时，直接回答“知识库中没有相关内容”。\n"
+    "4. 回答使用中文，简明、条理清晰。"
+)
+
+
+def sse(event: str, data: dict | list) -> str:
+    """拼接 SSE 事件帧；json.dumps 会转义换行为 \\n，保证 data 单行合法。"""
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _num(value: float) -> int | float:
+    """12000.0 → 12000；1812.5 保留一位。"""
+    v = float(value)
+    return int(v) if v.is_integer() else round(v, 1)
+
+
+def _is_effect(question: str) -> bool:
+    return any(k in question for k in _EFFECT_KEYWORDS)
+
+
+def _snapshot(db, user_id: int) -> dict:
+    """聚合用户数据（真实小数字）：近 30 天容量/体重 + 偏好 + 有无记录标记。"""
+    since30 = dt.date.today() - dt.timedelta(days=29)
+
+    workouts30 = db.scalars(
+        select(WorkoutLog).where(WorkoutLog.user_id == user_id, WorkoutLog.date >= since30)
+    ).all()
+    volume30 = sum(exercise_volume(w.exercises) for w in workouts30)
+    has_any_workout = (
+        db.scalar(select(WorkoutLog.id).where(WorkoutLog.user_id == user_id).limit(1)) is not None
+    )
+
+    metrics30 = db.scalars(
+        select(BodyMetric)
+        .where(
+            BodyMetric.user_id == user_id,
+            BodyMetric.weight.is_not(None),
+            BodyMetric.date >= since30,
+        )
+        .order_by(BodyMetric.date.asc(), BodyMetric.id.asc())
+    ).all()
+    has_any_metric = (
+        db.scalar(
+            select(BodyMetric.id)
+            .where(BodyMetric.user_id == user_id, BodyMetric.weight.is_not(None))
+            .limit(1)
+        )
+        is not None
+    )
+    latest_weight = metrics30[-1].weight if metrics30 else None
+    weight_delta: float | None = None
+    if len(metrics30) > 1:
+        weight_delta = round(metrics30[-1].weight - metrics30[0].weight, 1)
+    elif len(metrics30) == 1:
+        weight_delta = 0
+
+    pref = db.get(Preference, user_id)
+    return {
+        "volume30": volume30,
+        "has_any_workout": has_any_workout,
+        "latest_weight": latest_weight,
+        "weight_delta": weight_delta,
+        "has_any_metric": has_any_metric,
+        "goal": pref.goal if pref else None,
+        "allergies": pref.allergies if pref and pref.allergies else [],
+    }
+
+
+def _materials_block(chunks: list[dict]) -> str:
+    """【资料】块：按检索顺序编号 [1][2]…，含 doc_title/source/text。"""
+    parts = ["【资料】"]
+    for i, c in enumerate(chunks, start=1):
+        src = f"（{c['source']}）" if c.get("source") else ""
+        parts.append(f"[{i}]《{c['doc_title']}》{src}\n{c['text']}")
+    return "\n\n".join(parts)
+
+
+def _my_data_block(snap: dict) -> str:
+    """【我的数据】块：仅有数据的行才出现（容量/体重变化/目标/忌口）。"""
+    lines: list[str] = []
+    if snap["has_any_workout"]:
+        lines.append(f"近30天训练总容量：{_num(snap['volume30'])}kg")
+    if snap["latest_weight"] is not None:
+        delta = snap["weight_delta"]
+        delta_txt = ("+" if delta > 0 else "") + str(delta)
+        lines.append(f"最新体重：{snap['latest_weight']}kg（近30天变化 {delta_txt}kg）")
+    if snap["goal"]:
+        lines.append(f"目标：{snap['goal']}")
+    if snap["allergies"]:
+        lines.append(f"忌口：{'、'.join(snap['allergies'])}")
+    return "\n".join(lines)
+
+
+def _persist(
+    db,
+    user_id: int,
+    question: str,
+    answer: str,
+    citations: list[dict],
+    conversation_id: int | None,
+) -> tuple[int, int]:
+    """同一 db session 落库：user 消息 + assistant 消息（含 citations/完整 content），
+    会话不存在则创建（title 取提问前 30 字）；会话不属于当前用户时另建新会话。"""
+    conv: Conversation | None = None
+    if conversation_id is not None:
+        conv = db.get(Conversation, conversation_id)
+        if conv is not None and conv.user_id != user_id:
+            log.warning("会话 %s 不属于用户 %s，另建新会话", conversation_id, user_id)
+            conv = None
+    if conv is None:
+        conv = Conversation(user_id=user_id, title=question[:30])
+        db.add(conv)
+        db.flush()  # 先拿到 conv.id
+
+    db.add(Message(conversation_id=conv.id, role="user", content=question))
+    assistant = Message(
+        conversation_id=conv.id,
+        role="assistant",
+        content=answer,
+        citations=citations or None,
+    )
+    db.add(assistant)
+    db.flush()
+    conv_id, msg_id = conv.id, assistant.id
+    db.commit()
+    return conv_id, msg_id
+
+
+def answer_stream(
+    user: User,
+    question: str,
+    document_ids: list[int] | None = None,
+    conversation_id: int | None = None,
+    state: dict | None = None,
+) -> Iterator[str]:
+    """问答 SSE 生成器（普通 def，随路由放入线程池执行）。
+
+    事件序列：citations → message…；异常/无内容 → error（终态）。
+    成功后向 state 写入 {"conversationId", "messageId"}，路由层据此补发 done；
+    任一 error/异常分支会把 state["errored"]=True。
+    """
+    state = state if state is not None else {}
+    state["errored"] = False
+    db = SessionLocal()
+    try:
+        effect = _is_effect(question)
+
+        # 1) 向量检索（本人文档；document_ids 非空时限定范围）
+        try:
+            chunks = index.retrieve(user.id, question, document_ids=document_ids)
+        except RuntimeError as exc:  # 配置类错误（如 API key 缺失）直接透出可读信息
+            log.warning("检索配置异常 user=%s: %s", user.id, exc)
+            state["errored"] = True
+            yield sse("error", {"message": str(exc)})
+            return
+        except Exception:
+            log.exception("检索失败 user=%s", user.id)
+            state["errored"] = True
+            yield sse("error", {"message": "检索服务异常，请稍后重试"})
+            return
+
+        # 2) 用户数据快照（效果类必用；资料类有数据时附块）
+        snap = _snapshot(db, user.id)
+
+        if not chunks and not effect:
+            state["errored"] = True
+            yield sse("error", {"message": _NO_CONTENT})
+            return
+        if effect and not snap["has_any_workout"] and not snap["has_any_metric"]:
+            state["errored"] = True
+            yield sse("error", {"message": _NO_RECORDS})
+            return
+
+        # 3) citations 事件（首个 token 前）
+        citations = [
+            {
+                "idx": i,
+                "docTitle": c["doc_title"],
+                "source": c["source"],
+                "text": (c["text"] or "")[:80],
+            }
+            for i, c in enumerate(chunks, start=1)
+        ]
+        yield sse("citations", citations)
+
+        # 4) Prompt 双块组装
+        blocks: list[str] = []
+        if chunks:
+            blocks.append(_materials_block(chunks))
+        my_data = _my_data_block(snap)
+        if my_data:  # 效果类或有数据 → 附结构化数字
+            blocks.append(f"【我的数据】\n{my_data}")
+        prompt = "\n\n".join(blocks + [f"问题：{question}"])
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+
+        # 5) 模型流式输出 → 逐 token 发 message 事件
+        if not config.CHAT_API_KEY:
+            state["errored"] = True
+            yield sse("error", {"message": "CHAT_API_KEY 未配置"})
+            return
+        try:
+            client = OpenAI(api_key=config.CHAT_API_KEY, base_url=config.CHAT_BASE_URL)
+            stream = client.chat.completions.create(
+                model=config.CHAT_MODEL,
+                messages=messages,
+                stream=True,
+            )
+        except Exception:
+            log.exception("chat 流建立失败 user=%s", user.id)
+            state["errored"] = True
+            yield sse("error", {"message": "模型服务不可用"})
+            return
+
+        full = ""
+        try:
+            for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    full += delta
+                    yield sse("message", {"delta": delta})
+        except Exception:
+            log.exception("chat 流中断 user=%s", user.id)
+            state["errored"] = True
+            yield sse("error", {"message": "回答生成中断，请重试"})
+            return
+
+        # 6) 流结束：落库（与上文聚合同一 session），失败仅记日志不影响已推流
+        try:
+            conv_id, msg_id = _persist(db, user.id, question, full, citations, conversation_id)
+            state["conversationId"] = conv_id
+            state["messageId"] = msg_id
+        except Exception:
+            log.exception("问答落库失败 user=%s", user.id)
+            state["conversationId"] = None
+            state["messageId"] = None
+    finally:
+        db.close()

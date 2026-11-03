@@ -1,5 +1,6 @@
-"""文档业务：上传/解析/切分/删除 的编排（D2）。"""
+"""文档业务：上传/解析/切分/删除 的编排（D2），并同步维护向量索引（D4）。"""
 import hashlib
+import logging
 import os
 import shutil
 
@@ -9,7 +10,14 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.db import Document, User
-from app.services import pipeline
+from app.services import index, pipeline
+
+log = logging.getLogger("app")
+
+
+def _index_fail_reason(exc: Exception) -> str:
+    """向量索引失败 → 可读 fail_reason（截到列宽 500）。"""
+    return f"向量索引失败：{str(exc) or '未知错误'}"[:500]
 
 
 def _md5(path: str) -> str:
@@ -74,9 +82,17 @@ def create_document(db: Session, user: User, file: UploadFile, category: str) ->
         pages = pipeline.load_texts(final_path)
         chunks = pipeline.split_chunks(pages)
         pipeline.save_chunks(doc.id, doc.filename, doc.category, chunks)
-        doc.status = "READY"
-        doc.chunk_count = len(chunks)
-        doc.fail_reason = None
+        try:
+            # 向量索引失败转 FAILED（不拖崩上传接口）；FAILED 分支不清索引
+            index.index_document(doc.id, doc.filename, user.id, doc.category, chunks)
+        except Exception as e:
+            log.warning("文档 %s 向量索引失败: %s", doc.id, e)
+            doc.status = "FAILED"
+            doc.fail_reason = _index_fail_reason(e)
+        else:
+            doc.status = "READY"
+            doc.chunk_count = len(chunks)
+            doc.fail_reason = None
         db.commit()
     except Exception as e:  # 解析失败：给用户可读原因
         doc.status = "FAILED"
@@ -141,9 +157,18 @@ def retry_document(db: Session, user: User, doc_id: int) -> dict:
     try:
         chunks = pipeline.split_chunks(pipeline.load_texts(path))
         pipeline.save_chunks(doc.id, doc.filename, doc.category, chunks)
-        doc.status = "READY"
-        doc.chunk_count = len(chunks)
-        doc.fail_reason = None
+        try:
+            # 重试成功：先清旧向量再重新索引（保证原子替换）
+            index.remove_document(doc.id)
+            index.index_document(doc.id, doc.filename, user.id, doc.category, chunks)
+        except Exception as e:
+            log.warning("文档 %s 重试向量索引失败: %s", doc.id, e)
+            doc.status = "FAILED"
+            doc.fail_reason = _index_fail_reason(e)
+        else:
+            doc.status = "READY"
+            doc.chunk_count = len(chunks)
+            doc.fail_reason = None
     except Exception as e:
         doc.status = "FAILED"
         doc.fail_reason = str(e) or "解析失败"
@@ -160,5 +185,7 @@ def delete_document(db: Session, user: User, doc_id: int) -> None:
     except FileNotFoundError:
         pass
     pipeline.remove_chunks(doc.id)
+    # 三处同步：磁盘文件 + Chroma 向量（where doc_id）已删，业务记录最后删
+    index.remove_document(doc.id)
     db.delete(doc)
     db.commit()

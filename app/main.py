@@ -8,7 +8,17 @@ from fastapi.responses import JSONResponse
 
 from app import resp
 from app.db import Base, engine
-from app.routers import auth, diets, documents, metrics, preference, workouts
+from app.routers import (
+    auth,
+    chat,
+    conversations,
+    diets,
+    documents,
+    metrics,
+    preference,
+    stats,
+    workouts,
+)
 
 log = logging.getLogger("app")
 
@@ -29,6 +39,10 @@ app.include_router(workouts.router)
 app.include_router(metrics.router)
 app.include_router(diets.router)
 app.include_router(preference.router)
+app.include_router(chat.router)
+app.include_router(conversations.router)
+app.include_router(conversations.feedback_router)
+app.include_router(stats.router)
 
 
 @app.exception_handler(HTTPException)

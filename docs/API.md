@@ -203,8 +203,8 @@ data: {"conversationId":2,"messageId":9}
 | --- | --- | --- | --- |
 | GET | /conversations?page=&size= | — | `{total, list:[{id,title,createdAt}]}` |
 | GET | /conversations/{id}/messages | — | `{list:[{id,role,content,citations,createdAt}]}` |
-| DELETE | /conversations/{id} | — | `{code:0}` |
-| POST | /messages/{id}/feedback | `{ "positive": true }` | `{code:0}` |
+| DELETE | /conversations/{id} | — | `{ "code": 1, "data": null }` |
+| POST | /messages/{id}/feedback | `{ "positive": true }` | `{ "code": 1, "data": null }` |
 
 ### GET /stats
 

@@ -3,7 +3,7 @@ import os
 import datetime as dt
 from datetime import datetime
 
-from sqlalchemy import JSON, create_engine, String
+from sqlalchemy import JSON, Text, create_engine, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from app import config
@@ -97,6 +97,42 @@ class DietLog(Base):
     date: Mapped[dt.date] = mapped_column(index=True)
     content: Mapped[str] = mapped_column(String(2000))
     avoid: Mapped[list | None] = mapped_column(JSON, default=None)   # ["牛奶", ...]
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class Conversation(Base):
+    """一次问答会话（D4）：title 取首次提问前 30 字。"""
+
+    __tablename__ = "conversation"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    title: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class Message(Base):
+    """会话消息：role 为 user/assistant；assistant 消息携带 citations（引用数组 JSON）。"""
+
+    __tablename__ = "message"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    citations: Mapped[list | None] = mapped_column(JSON, default=None)
+    created_at: Mapped[datetime] = mapped_column(default=datetime.now)
+
+
+class Feedback(Base):
+    """回答反馈：is_positive 正/负评；user_id 冗余存储便于按用户统计正评率。"""
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(index=True)
+    user_id: Mapped[int] = mapped_column(index=True)
+    is_positive: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
 

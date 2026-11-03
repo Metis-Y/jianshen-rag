@@ -71,3 +71,22 @@ class PreferenceIn(BaseModel):
 
     goal: str | None = Field(default=None, max_length=32)
     allergies: list[str] | None = None
+
+
+# ---------- 问答（docs/API.md 第 5、6 节） ----------
+
+
+class ChatIn(BaseModel):
+    """POST /api/chat：documentIds 限定检索范围；conversationId 不传则新建会话。"""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    question: str = Field(min_length=1, max_length=2000)
+    conversation_id: int | None = Field(default=None, alias="conversationId")
+    document_ids: list[int] | None = Field(default=None, alias="documentIds")
+
+
+class FeedbackIn(BaseModel):
+    """POST /api/messages/{id}/feedback 入参。"""
+
+    positive: bool
