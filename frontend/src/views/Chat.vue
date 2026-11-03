@@ -15,6 +15,11 @@ const streamingText = ref('')
 const streamCitations = ref([])
 const streamError = ref('')
 
+// 视图切换计数：每次切会话/新对话 +1；流式气泡只属于发起时的那个视图，
+// 切到别的会话后不显示，答完也不追加进无关会话
+const viewSeq = ref(0)
+const streamSeq = ref(-1)
+
 const input = ref('')
 const scope = ref([])             // 限定资料范围（docId 列表）
 const scopeOptions = ref([])      // READY 文档选项
@@ -23,6 +28,18 @@ const docsTotal = ref(0)          // 用户全部文档数（含非 READY），�
 const chatBody = ref(null)
 
 const noDocs = computed(() => docsTotal.value === 0)
+const streamInView = computed(() => streaming.value && streamSeq.value === viewSeq.value)
+
+function mapMessage(m) {
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    citations: m.citations || [],
+    feedback: m.feedback === true ? 'up' : m.feedback === false ? 'down' : null,
+    isError: false
+  }
+}
 
 // ---- 会话 ----
 async function loadConversations() {
@@ -34,21 +51,26 @@ async function loadConversations() {
   }
 }
 
-async function openConversation(conv) {
-  activeConvId.value = conv.id
+async function loadMessages(convId) {
   try {
-    const data = await api.get(`/conversations/${conv.id}/messages`)
-    messages.value = (data && data.list) || []
+    const data = await api.get(`/conversations/${convId}/messages`)
+    messages.value = ((data && data.list) || []).map(mapMessage)
     scrollToBottom()
   } catch (e) {
     // 错误信息已由拦截器统一 alert
   }
 }
 
+function openConversation(conv) {
+  activeConvId.value = conv.id
+  viewSeq.value += 1
+  loadMessages(conv.id)
+}
+
 function newChat() {
   activeConvId.value = null
   messages.value = []
-  streamFieldsReset()
+  viewSeq.value += 1
 }
 
 async function removeConversation(conv) {
@@ -138,6 +160,7 @@ async function send() {
   messages.value.push({ role: 'user', content: question })
   streamFieldsReset()
   streaming.value = true
+  streamSeq.value = viewSeq.value
   scrollToBottom()
 
   const body = { question }
@@ -157,6 +180,7 @@ async function send() {
   } catch (e) {
     ElMessage.error('网络错误，请重试')
     streaming.value = false
+    streamSeq.value = -1
     return
   }
 
@@ -174,6 +198,7 @@ async function send() {
       router.replace('/login')
     }
     streaming.value = false
+    streamSeq.value = -1
     return
   }
 
@@ -211,25 +236,31 @@ async function send() {
   } catch (e) {
     streamError.value = '连接中断，请重试'
   } finally {
-    // 落库为一条 assistant 消息；error 帧时无独立消息体则展示错误文案
-    const content = streamingText.value || streamError.value || '（无回复内容）'
     const msg = {
       id: doneInfo ? doneInfo.messageId : null,
       role: 'assistant',
-      content,
+      content: streamingText.value || streamError.value || '（无回复内容）',
       citations: streamCitations.value,
       feedback: null,
       isError: !!streamError.value
     }
-    // 已落库则进入历史；未落库（模型失败/未配置）也展示在流里但不进历史
-    messages.value.push(msg)
+    const sameView = streamSeq.value === viewSeq.value
     if (doneInfo && doneInfo.conversationId) {
-      activeConvId.value = doneInfo.conversationId
-    } else {
-      await loadConversations()
+      if (sameView) {
+        // 流式视图一直打开：就地追加并记录会话
+        activeConvId.value = doneInfo.conversationId
+        messages.value.push(msg)
+      } else if (activeConvId.value === doneInfo.conversationId) {
+        // 切走后又切回该会话：从历史重载补齐
+        await loadMessages(doneInfo.conversationId)
+      }
+    } else if (sameView) {
+      // 未落库（模型失败/未配置）也展示在当前会话
+      messages.value.push(msg)
     }
     streamFieldsReset()
     streaming.value = false
+    streamSeq.value = -1
     await loadConversations()
     scrollToBottom()
   }
@@ -238,9 +269,11 @@ async function send() {
 // ---- 反馈 ----
 async function feedback(msg, positive) {
   if (!msg.id) return
+  const next = positive ? 'up' : 'down'
+  if (msg.feedback === next) return // 已选同一项，不重复提交
   try {
     await api.post(`/messages/${msg.id}/feedback`, { positive })
-    msg.feedback = positive ? 'up' : 'down'
+    msg.feedback = next
     ElMessage.success('感谢反馈')
   } catch (e) {
     // 错误信息已由拦截器统一 alert
@@ -266,12 +299,10 @@ onMounted(async () => {
 <template>
   <div class="chat-page">
     <div class="chat-layout">
-      <!-- 左侧：会话列表 -->
+      <!-- 左侧：历史会话（可滚动） + 底部固定新对话入口 -->
       <aside class="conv-side">
-        <el-button type="primary" class="new-chat-btn" @click="newChat">
-          新对话
-        </el-button>
-        <div class="conv-list" v-loading="false">
+        <div class="conv-header">历史对话</div>
+        <div class="conv-list">
           <div v-if="!convs.length" class="conv-empty">暂无历史会话</div>
           <div
             v-for="conv in convs"
@@ -292,12 +323,15 @@ onMounted(async () => {
             </el-button>
           </div>
         </div>
+        <el-button type="primary" class="new-chat-btn" @click="newChat">
+          开启新对话
+        </el-button>
       </aside>
 
       <!-- 右侧：对话主体 -->
       <main class="chat-main">
         <div ref="chatBody" class="chat-body">
-          <div v-if="!messages.length && !streamingText" class="chat-welcome">
+          <div v-if="!messages.length && !streamInView" class="chat-welcome">
             <h2>向健身助手提问</h2>
             <p class="hint">
               资料类问题会引用你上传的文档；关于“进步 / 趋势 / 体重”的问题，
@@ -358,8 +392,8 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 流式输出中的 assistant 气泡 -->
-          <div v-if="streamingText || streamCitations.length" class="msg-row assistant">
+          <!-- 流式输出中的 assistant 气泡：只在发起提问的会话视图显示 -->
+          <div v-if="streamInView && (streamingText || streamCitations.length)" class="msg-row assistant">
             <div class="bubble">
               <div class="bubble-text bubble-pre">
                 {{ streamingText || '思考中…' }}<span class="cursor">▍</span>
@@ -458,14 +492,18 @@ onMounted(async () => {
   flex-direction: column;
 }
 
-.new-chat-btn {
-  width: 100%;
+.conv-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  padding: 4px 8px 8px;
+  flex-shrink: 0;
 }
 
 .conv-list {
-  margin-top: 12px;
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 
 .conv-empty {
@@ -508,6 +546,14 @@ onMounted(async () => {
 
 .conv-item:hover .conv-del {
   visibility: visible;
+}
+
+/* 底部固定的新对话入口 */
+.new-chat-btn {
+  width: 100%;
+  margin-top: 12px;
+  margin-left: 0;
+  flex-shrink: 0;
 }
 
 /* 右侧对话主体 */
