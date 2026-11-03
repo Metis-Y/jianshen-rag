@@ -269,12 +269,12 @@ async function send() {
 // ---- 反馈 ----
 async function feedback(msg, positive) {
   if (!msg.id) return
-  const next = positive ? 'up' : 'down'
-  if (msg.feedback === next) return // 已选同一项，不重复提交
+  // 再点已高亮的选项 → 取消；点另一项 → 切换
+  const clear = (positive && msg.feedback === 'up') || (!positive && msg.feedback === 'down')
   try {
-    await api.post(`/messages/${msg.id}/feedback`, { positive })
-    msg.feedback = next
-    ElMessage.success('感谢反馈')
+    await api.post(`/messages/${msg.id}/feedback`, { positive: clear ? null : positive })
+    msg.feedback = clear ? null : positive ? 'up' : 'down'
+    ElMessage.success(clear ? '已取消反馈' : '感谢反馈')
   } catch (e) {
     // 错误信息已由拦截器统一 alert
   }
@@ -345,10 +345,10 @@ onMounted(async () => {
             type="info"
             :closable="false"
             show-icon
-            title="知识库还是空的"
+            title="个人知识库是空的"
           >
             <template #default>
-              <span>先去上传训练计划或营养资料，问答才有依据。</span>
+              <span>当前将基于公共知识库回答；上传自己的训练计划或营养资料后，回答会更贴合你的记录。</span>
               <el-button link type="primary" @click="router.push('/documents')">
                 去资料页
               </el-button>

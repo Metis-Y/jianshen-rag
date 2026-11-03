@@ -123,16 +123,22 @@ def feedback(
     if conv is None or conv.user_id != user.id:
         raise HTTPException(status_code=403, detail="无权操作该消息")
 
-    fb = db.scalar(
+    row = db.scalar(
         select(Feedback).where(
             Feedback.message_id == message_id,
             Feedback.user_id == user.id,
         )
     )
-    if fb is None:
-        fb = Feedback(message_id=message_id, user_id=user.id, is_positive=body.positive)
-        db.add(fb)
+    if body.positive is None:
+        # 取消反馈：删除已有记录（幂等）
+        if row is not None:
+            db.delete(row)
+        db.commit()
+        return resp.ok()
+    if row is None:
+        row = Feedback(message_id=message_id, user_id=user.id, is_positive=body.positive)
+        db.add(row)
     else:
-        fb.is_positive = body.positive
+        row.is_positive = body.positive
     db.commit()
     return resp.ok()

@@ -87,6 +87,6 @@ class ChatIn(BaseModel):
 
 
 class FeedbackIn(BaseModel):
-    """POST /api/messages/{id}/feedback 入参。"""
+    """POST /api/messages/{id}/feedback 入参：true 有帮助 / false 没帮助 / null 取消。"""
 
-    positive: bool
+    positive: bool | None = None
