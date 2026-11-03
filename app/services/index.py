@@ -60,8 +60,9 @@ def _meta(
     category: str,
     seq: int,
     source: str,
+    is_public: bool = False,
 ) -> dict:
-    """metadata 值只允许 str/int（Chroma 要求，None 会抛错）。"""
+    """metadata 值只允许 str/int/bool（Chroma 要求，None 会抛错）。"""
     return {
         "doc_id": int(doc_id),
         "doc_title": (doc_title or "")[:_META_TEXT_MAX],
@@ -69,6 +70,7 @@ def _meta(
         "seq": int(seq),
         "source": (source or "")[:_META_TEXT_MAX],
         "category": (category or "other")[:16],
+        "is_public": bool(is_public),
     }
 
 
@@ -78,6 +80,7 @@ def index_document(
     owner_id: int,
     category: str,
     chunks: list[dict],
+    is_public: bool = False,
 ) -> None:
     """文档全量碎片向量化后写入集合；ids 用 `{doc_id}:{seq}` 唯一标识。"""
     if not chunks:
@@ -90,7 +93,7 @@ def index_document(
         embeddings=vectors,
         documents=texts,
         metadatas=[
-            _meta(doc_id, doc_title, owner_id, category, c["seq"], c.get("source", ""))
+            _meta(doc_id, doc_title, owner_id, category, c["seq"], c.get("source", ""), is_public)
             for c in chunks
         ],
     )
@@ -111,15 +114,22 @@ def retrieve(
 
     返回按相似度排序的 [{doc_id, doc_title, seq, source, text}]（text 取明文）。
     """
-    if document_ids:  # 非空列表 → 全库过滤 + 文档白名单
+    # 可见集合：本人文档 + 公共知识库文档
+    base: dict = {
+        "$or": [
+            {"owner_id": int(owner_id)},
+            {"is_public": True},
+        ]
+    }
+    if document_ids:  # 非空列表 → 可见集合内再限定文档白名单
         where: dict = {
             "$and": [
-                {"owner_id": int(owner_id)},
+                base,
                 {"doc_id": {"$in": [int(i) for i in document_ids]}},
             ]
         }
     else:
-        where = {"owner_id": int(owner_id)}
+        where = base
 
     # 向量化 question（embedding 维度直接透传，无特殊处理）
     query_vec = _embed([question])[0]

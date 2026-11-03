@@ -52,6 +52,7 @@ class Document(Base):
     file_md5: Mapped[str] = mapped_column(String(32), index=True)
     size_bytes: Mapped[int] = mapped_column(default=0)
     category: Mapped[str] = mapped_column(String(16), default="other")   # plan / diet / other
+    is_public: Mapped[bool] = mapped_column(default=False, index=True)   # True=公共知识库，全体用户可检索
     status: Mapped[str] = mapped_column(String(16), default="PROCESSING")
     fail_reason: Mapped[str | None] = mapped_column(String(500), default=None)
     chunk_count: Mapped[int] = mapped_column(default=0)

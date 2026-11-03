@@ -36,7 +36,9 @@ def _check_size(file: UploadFile) -> None:
         raise HTTPException(status_code=413, detail=f"文件超过 {config.MAX_UPLOAD_MB}MB 上限")
 
 
-def create_document(db: Session, user: User, file: UploadFile, category: str) -> dict:
+def create_document(
+    db: Session, user: User, file: UploadFile, category: str, is_public: bool = False
+) -> dict:
     _check_size(file)
     user_dir = os.path.join(config.UPLOAD_DIR, f"user_{user.id}")
     os.makedirs(user_dir, exist_ok=True)
@@ -72,6 +74,7 @@ def create_document(db: Session, user: User, file: UploadFile, category: str) ->
         size_bytes=os.path.getsize(final_path),
         category=category or "other",
         status="PROCESSING",
+        is_public=is_public,
     )
     db.add(doc)
     db.commit()
@@ -84,7 +87,9 @@ def create_document(db: Session, user: User, file: UploadFile, category: str) ->
         pipeline.save_chunks(doc.id, doc.filename, doc.category, chunks)
         try:
             # 向量索引失败转 FAILED（不拖崩上传接口）；FAILED 分支不清索引
-            index.index_document(doc.id, doc.filename, user.id, doc.category, chunks)
+            index.index_document(
+                doc.id, doc.filename, user.id, doc.category, chunks, is_public=doc.is_public
+            )
         except Exception as e:
             log.warning("文档 %s 向量索引失败: %s", doc.id, e)
             doc.status = "FAILED"
@@ -160,7 +165,9 @@ def retry_document(db: Session, user: User, doc_id: int) -> dict:
         try:
             # 重试成功：先清旧向量再重新索引（保证原子替换）
             index.remove_document(doc.id)
-            index.index_document(doc.id, doc.filename, user.id, doc.category, chunks)
+            index.index_document(
+                doc.id, doc.filename, user.id, doc.category, chunks, is_public=doc.is_public
+            )
         except Exception as e:
             log.warning("文档 %s 重试向量索引失败: %s", doc.id, e)
             doc.status = "FAILED"

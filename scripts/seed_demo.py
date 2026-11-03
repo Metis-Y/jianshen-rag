@@ -1,11 +1,13 @@
-"""演示数据种子：创建 demo 账号，写入记录与偏好，导入三份示例资料。
+"""演示数据种子：demo 账号 + 记录偏好 + 个人示例资料 + 公共知识库。
 
 用法（项目根目录）：
     ./.venv/Scripts/python.exe scripts/seed_demo.py
 
 - 账号：demo / demo1234（已存在则复用）
 - 记录类数据（训练/体征/饮食）每次执行会重置为本脚本内容
-- 资料复用上传同款链路（解析→切分→向量索引），MD5 相同命中秒传不重复入库
+- 个人资料复用上传同款链路（解析→切分→向量索引），MD5 相同命中秒传不重复入库
+- 公共知识库：samples/public/ 由 system 账号持有，全体用户可检索；每次执行重建
+- 收尾对全部 READY 文档做一次向量元数据归一（补齐 is_public 字段）
 """
 import io
 import os
@@ -20,18 +22,27 @@ from sqlalchemy import delete, select  # noqa: E402
 from app.db import (  # noqa: E402
     BodyMetric,
     DietLog,
+    Document,
     Preference,
     SessionLocal,
     User,
     WorkoutLog,
 )
 from app.routers.auth import _hash  # noqa: E402
-from app.services import document_service  # noqa: E402
+from app.services import document_service, index, pipeline  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 SAMPLES = [
     ("训练计划示例.md", "plan"),
     ("减脂饮食示例.md", "diet"),
     ("动作要点示例.md", "plan"),
+]
+
+PUBLIC_SAMPLES = [
+    ("健身入门基础知识.md", "plan"),
+    ("减脂饮食原则.md", "diet"),
+    ("力量训练安全要点.md", "plan"),
 ]
 
 # 三天训练：固定动作与重量，容量可手工核算（深蹲 80×5×5=2000 …）
@@ -73,9 +84,22 @@ def volume(exercises: list) -> float:
     return total
 
 
+def _upload_to(db, user, folder: str, samples: list, is_public: bool) -> None:
+    for name, category in samples:
+        path = os.path.join(ROOT, "samples", folder, name)
+        with open(path, "rb") as f:
+            content = f.read()
+        upload = UploadFile(file=io.BytesIO(content), filename=name)
+        data = document_service.create_document(db, user, upload, category, is_public=is_public)
+        tag = "公共资料" if is_public else "资料"
+        print(f"{tag} {name}: status={data['status']} "
+              f"chunks={data['chunkCount']} dedup={data['dedup']}")
+
+
 def main() -> None:
     db = SessionLocal()
     try:
+        # ---- 1. demo 账号与记录 ----
         user = db.scalar(select(User).where(User.username == "demo"))
         if user is None:
             user = User(username="demo", password_hash=_hash("demo1234"))
@@ -92,7 +116,6 @@ def main() -> None:
         pref.goal = "减脂"
         pref.allergies = ["牛奶"]
 
-        # 记录类数据重置为种子内容
         db.execute(delete(WorkoutLog).where(WorkoutLog.user_id == user.id))
         db.execute(delete(BodyMetric).where(BodyMetric.user_id == user.id))
         db.execute(delete(DietLog).where(DietLog.user_id == user.id))
@@ -113,16 +136,40 @@ def main() -> None:
               f"（{METRICS[0][1]}→{METRICS[-1][1]}kg，变化 {weight_delta}kg）、"
               "1 条饮食、偏好（减脂 / 忌口牛奶）")
 
-        # 示例资料：复用上传链路（解析→切分→向量索引），重复执行命中秒传
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        for name, category in SAMPLES:
-            path = os.path.join(root, "samples", name)
-            with open(path, "rb") as f:
-                content = f.read()
-            upload = UploadFile(file=io.BytesIO(content), filename=name)
-            data = document_service.create_document(db, user, upload, category)
-            print(f"资料 {name}: status={data['status']} "
-                  f"chunks={data['chunkCount']} dedup={data['dedup']}")
+        # ---- 2. demo 个人示例资料 ----
+        _upload_to(db, user, ".", SAMPLES, is_public=False)
+
+        # ---- 3. 公共知识库（system 持有，全体用户可检索）----
+        sys_user = db.scalar(select(User).where(User.username == "system"))
+        if sys_user is None:
+            sys_user = User(username="system", password_hash=_hash(os.urandom(6).hex()))
+            db.add(sys_user)
+            db.flush()
+            print("已创建 system 账号（公共知识库归属）")
+
+        old_public = db.scalars(
+            select(Document).where(Document.user_id == sys_user.id)
+        ).all()
+        for doc in old_public:
+            document_service.delete_document(db, sys_user, doc.id)
+        if old_public:
+            print(f"已清理公共知识库旧资料 {len(old_public)} 份")
+        _upload_to(db, sys_user, "public", PUBLIC_SAMPLES, is_public=True)
+
+        # ---- 4. 向量元数据归一：为存量文档补齐 is_public 字段 ----
+        ready_docs = db.scalars(select(Document).where(Document.status == "READY")).all()
+        for doc in ready_docs:
+            data = pipeline.load_chunks(doc.id)
+            index.remove_document(doc.id)
+            index.index_document(
+                doc.id,
+                doc.filename,
+                doc.user_id,
+                doc.category,
+                data["chunks"],
+                is_public=bool(doc.is_public),
+            )
+        print(f"已归一化 {len(ready_docs)} 份文档的向量元数据")
     finally:
         db.close()
 
