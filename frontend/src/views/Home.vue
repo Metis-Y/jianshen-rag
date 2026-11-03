@@ -18,6 +18,14 @@ function goDocuments() {
   router.push('/documents')
 }
 
+function goChat() {
+  router.push('/chat')
+}
+
+function goRecords() {
+  router.push('/records')
+}
+
 function logout() {
   localStorage.removeItem('token')
   router.replace('/login')
@@ -28,7 +36,9 @@ function logout() {
   <div class="page-center">
     <el-card class="home-card">
       <h2>欢迎，{{ (me && me.username) || '用户' }}</h2>
-      <p class="hint" style="margin: 12px 0 24px">训练记录开发中</p>
+      <p class="hint" style="margin: 12px 0 24px">
+        上传训练资料、记录每日训练，然后向助手提问你的进展
+      </p>
       <p v-if="me && me.goal" class="hint" style="margin-bottom: 8px">
         目标：{{ me.goal }}
       </p>
@@ -36,7 +46,9 @@ function logout() {
         忌口/过敏：{{ me.allergies }}
       </p>
       <div class="actions">
-        <el-button type="primary" @click="goDocuments">资料管理</el-button>
+        <el-button type="primary" @click="goChat">问答助手</el-button>
+        <el-button @click="goDocuments">资料管理</el-button>
+        <el-button @click="goRecords">训练记录</el-button>
         <el-button @click="logout">退出登录</el-button>
       </div>
     </el-card>
