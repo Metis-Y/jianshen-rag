@@ -29,21 +29,17 @@ from app.services import index
 
 log = logging.getLogger("app")
 
-# 效果类问题关键词：命中任一 → 必须用【我的数据】真实数字回答
-_EFFECT_KEYWORDS = ("趋势", "进步", "变化", "记录", "体重", "容量", "最近", "这周", "上周")
-
-_NO_CONTENT = "知识库中没有相关内容"
-_NO_RECORDS = "记录不足，无法判断"
+_NO_CONTENT = "知识库和记录里都没有相关内容"
 
 _SYSTEM_PROMPT = (
     "你是健身私教助手，请严格遵守以下回答规则：\n"
     "1. 资料类问题：只能依据【资料】中的内容回答，不得编造资料中没有的信息，"
     "并在相关句子末尾标注资料编号（如 [1]）。\n"
-    "2. 效果/进展类问题：必须使用【我的数据】中的真实数字作为依据，"
-    "不得编造训练容量、体重等任何数据。\n"
+    "2. 关于用户自身状态/进展/训练/体重/恢复的问题：必须使用【我的数据】中的真实数字回答，"
+    "不得编造；【我的数据】中没有相关记录时，直接回答“记录不足，无法判断”。\n"
     "3. 仅当【资料】和【我的数据】都不足以回答问题时，才直接回答“知识库中没有相关内容”；"
-    "已经用【我的数据】回答过的，不要再附加这句话。\n"
-    "4. 回答使用中文，简明、条理清晰。"
+    "已经用【我的数据】回答过，不要再附加这句话。\n"
+    "4. 回答使用中文，简明、条理清晰；必须避开【我的数据】中标注的忌口。"
 )
 
 
@@ -56,10 +52,6 @@ def _num(value: float) -> int | float:
     """12000.0 → 12000；1812.5 保留一位。"""
     v = float(value)
     return int(v) if v.is_integer() else round(v, 1)
-
-
-def _is_effect(question: str) -> bool:
-    return any(k in question for k in _EFFECT_KEYWORDS)
 
 
 def _snapshot(db, user_id: int) -> dict:
@@ -200,9 +192,7 @@ def answer_stream(
     state["errored"] = False
     db = SessionLocal()
     try:
-        effect = _is_effect(question)
-
-        # 1) 向量检索（本人文档；document_ids 非空时限定范围）
+        # 1) 向量检索（本人文档或公共文档；document_ids 非空时限定范围）
         try:
             chunks = index.retrieve(user.id, question, document_ids=document_ids)
         except RuntimeError as exc:  # 配置类错误（如 API key 缺失）直接透出可读信息
@@ -216,16 +206,14 @@ def answer_stream(
             yield sse("error", {"message": "检索服务异常，请稍后重试"})
             return
 
-        # 2) 用户数据快照（效果类必用；资料类有数据时附块）
+        # 2) 用户数据快照（每次提问都带，模型自行决定用不用）
         snap = _snapshot(db, user.id)
 
-        if not chunks and not effect:
+        # 信息门控：既无资料命中、也无任何记录时才不调模型；其余一律调模型，
+        # 用资料还是用数据、"记录不足"/"没有相关内容"，全由模型按系统规则自行判断。
+        if not chunks and not snap["has_any_workout"] and not snap["has_any_metric"]:
             state["errored"] = True
             yield sse("error", {"message": _NO_CONTENT})
-            return
-        if effect and not snap["has_any_workout"] and not snap["has_any_metric"]:
-            state["errored"] = True
-            yield sse("error", {"message": _NO_RECORDS})
             return
 
         # 3) citations 事件（首个 token 前）
