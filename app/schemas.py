@@ -62,8 +62,9 @@ class MetricIn(BaseModel):
 
 class DietIn(BaseModel):
     date: datetime.date
+    meal: str | None = Field(default=None, max_length=16)   # 早餐/午餐/晚餐（可选）
     content: str = Field(min_length=1, max_length=2000)
-    avoid: list[str] | None = None
+    avoid: list[str] | None = None   # 历史兼容字段，前端表单已不提交
 
 
 class PreferenceIn(BaseModel):

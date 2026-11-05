@@ -136,6 +136,7 @@ def main() -> None:
         db.add(DietLog(
             user_id=user.id,
             date=d(0),
+            meal="午餐",
             content="午餐：鸡胸肉蔬菜沙拉（无酱）；晚餐：清蒸鲈鱼 + 清炒西兰花；加餐：苹果一个",
         ))
         db.commit()

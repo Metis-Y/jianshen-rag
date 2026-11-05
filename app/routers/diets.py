@@ -16,6 +16,7 @@ def _record_out(row: DietLog) -> dict:
     return {
         "id": row.id,
         "date": row.date.isoformat(),
+        "meal": row.meal,
         "content": row.content,
         "avoid": row.avoid or [],
     }
@@ -27,7 +28,9 @@ def create(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    row = DietLog(user_id=user.id, date=body.date, content=body.content, avoid=body.avoid)
+    row = DietLog(
+        user_id=user.id, date=body.date, meal=body.meal, content=body.content, avoid=body.avoid
+    )
     db.add(row)
     db.commit()
     db.refresh(row)

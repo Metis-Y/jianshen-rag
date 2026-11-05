@@ -154,25 +154,17 @@ async function submitMetric() {
   }
 }
 
-// ---------- 饮食 ----------
+// ---------- 饮食（三餐可选） ----------
 const dietDate = ref(todayStr())
-const dietContent = ref('')
-const avoidTags = ref([])
-const avoidInput = ref('')
+const mealInputs = ref({ breakfast: '', lunch: '', dinner: '' })
 const dietSubmitting = ref(false)
 const dietLoading = ref(false)
 const dietRecords = ref([])
 
-function addAvoidTag() {
-  const tag = avoidInput.value.trim()
-  if (!tag) return
-  if (!avoidTags.value.includes(tag)) {
-    avoidTags.value.push(tag)
-  }
-  avoidInput.value = ''
-}
-function removeAvoidTag(tag) {
-  avoidTags.value = avoidTags.value.filter((t) => t !== tag)
+const MEAL_LABELS = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' }
+
+function mealLabel(meal) {
+  return MEAL_LABELS[meal] || meal || '—'
 }
 
 async function fetchDiets() {
@@ -194,21 +186,21 @@ async function submitDiet() {
     ElMessage.warning('请选择日期')
     return
   }
-  if (!dietContent.value.trim()) {
-    ElMessage.warning('请填写饮食内容')
+  // 三餐均可选填：空的餐次不提交
+  const meals = Object.entries(mealInputs.value)
+    .map(([meal, content]) => ({ meal, content: String(content || '').trim() }))
+    .filter((m) => m.content)
+  if (!meals.length) {
+    ElMessage.warning('请至少填写一餐')
     return
   }
   dietSubmitting.value = true
   try {
-    const avoid = avoidTags.value.map((t) => t.trim()).filter(Boolean)
-    await api.post('/diets', {
-      date: dietDate.value,
-      content: dietContent.value.trim(),
-      avoid
-    })
-    ElMessage.success('饮食已记录')
-    dietContent.value = ''
-    avoidTags.value = []
+    for (const m of meals) {
+      await api.post('/diets', { date: dietDate.value, meal: m.meal, content: m.content })
+    }
+    ElMessage.success(`已记录 ${meals.length} 餐`)
+    mealInputs.value = { breakfast: '', lunch: '', dinner: '' }
     await fetchDiets()
   } catch (e) {
     // 错误信息已由拦截器统一 alert
@@ -261,6 +253,10 @@ async function fetchPreference() {
 async function savePreference() {
   preferenceSaving.value = true
   try {
+    // 输入框里还没回车的忌口随保存一起收编，避免"打了字就点保存"被丢弃
+    if (allergyInput.value.trim()) {
+      addAllergyTag()
+    }
     // 整体覆盖：清空场景下 goal=null、allergies=[] 原样提交
     await api.put('/preference', {
       goal: goal.value || null,
@@ -552,33 +548,35 @@ const recentSeries = computed(() => {
                 style="width: 160px"
               />
             </el-form-item>
-            <el-form-item label="内容" required>
+            <el-form-item label="早餐">
               <el-input
-                v-model="dietContent"
+                v-model="mealInputs.breakfast"
                 type="textarea"
-                :rows="3"
+                :rows="2"
                 maxlength="500"
                 show-word-limit
-                placeholder="如：鸡胸肉 + 糙米 + 西兰花"
+                placeholder="如：燕麦 + 水煮蛋（可留空）"
               />
             </el-form-item>
-            <el-form-item label="本次忌口">
-              <div class="tag-area">
-                <el-input
-                  v-model="avoidInput"
-                  placeholder="输入忌口后回车（如：牛奶）"
-                  style="width: 240px"
-                  @keyup.enter.prevent="addAvoidTag"
-                />
-                <span
-                  v-for="tag in avoidTags"
-                  :key="tag"
-                  class="avoid-tag"
-                >
-                  {{ tag }}
-                  <span class="avoid-tag-close" @click="removeAvoidTag(tag)">×</span>
-                </span>
-              </div>
+            <el-form-item label="午餐">
+              <el-input
+                v-model="mealInputs.lunch"
+                type="textarea"
+                :rows="2"
+                maxlength="500"
+                show-word-limit
+                placeholder="如：鸡胸肉 + 糙米 + 西兰花（可留空）"
+              />
+            </el-form-item>
+            <el-form-item label="晚餐">
+              <el-input
+                v-model="mealInputs.dinner"
+                type="textarea"
+                :rows="2"
+                maxlength="500"
+                show-word-limit
+                placeholder="如：清蒸鱼 + 红薯（可留空）"
+              />
             </el-form-item>
             <el-form-item>
               <el-button
@@ -595,15 +593,12 @@ const recentSeries = computed(() => {
             <div class="sub-title">最近饮食记录</div>
             <el-table :data="dietRecords" empty-text="暂无饮食记录">
               <el-table-column prop="date" label="日期" width="120" />
-              <el-table-column prop="content" label="内容" min-width="220" show-overflow-tooltip />
-              <el-table-column label="忌口" min-width="160">
+              <el-table-column label="餐次" width="90">
                 <template #default="{ row }">
-                  <span v-if="row.avoid && row.avoid.length">
-                    {{ row.avoid.join('、') }}
-                  </span>
-                  <span v-else>—</span>
+                  {{ mealLabel(row.meal) }}
                 </template>
               </el-table-column>
+              <el-table-column prop="content" label="内容" min-width="220" show-overflow-tooltip />
             </el-table>
           </div>
         </el-tab-pane>
@@ -654,9 +649,10 @@ const recentSeries = computed(() => {
                 <div class="tag-area">
                   <el-input
                     v-model="allergyInput"
-                    placeholder="输入忌口后回车（如：花生）"
+                    placeholder="输入忌口（回车或失焦收编，如：花生）"
                     style="width: 240px"
                     @keyup.enter.prevent="addAllergyTag"
+                    @blur="addAllergyTag"
                   />
                   <span
                     v-for="tag in allergyTags"

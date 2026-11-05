@@ -90,15 +90,17 @@ class BodyMetric(Base):
 
 
 class DietLog(Base):
-    """饮食记录：content 记吃了什么，avoid 为该次临时忌口/标签。"""
+    """饮食记录：meal 餐次（早餐/午餐/晚餐，可选），content 记吃了什么；
+    avoid 为历史兼容字段（表单已不再提交，忌口只走偏好长期忌口）。"""
 
     __tablename__ = "diet_log"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(index=True)
     date: Mapped[dt.date] = mapped_column(index=True)
+    meal: Mapped[str | None] = mapped_column(String(16), default=None)   # 早餐/午餐/晚餐（可选）
     content: Mapped[str] = mapped_column(String(2000))
-    avoid: Mapped[list | None] = mapped_column(JSON, default=None)   # ["牛奶", ...]
+    avoid: Mapped[list | None] = mapped_column(JSON, default=None)   # 历史兼容
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
 
