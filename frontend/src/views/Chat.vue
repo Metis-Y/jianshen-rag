@@ -41,6 +41,11 @@ function mapMessage(m) {
   }
 }
 
+// 模型输出常以空行开头，pre-wrap 下会在气泡顶部渲染出空白——展示前剪掉前导空行
+function trimLead(s) {
+  return (s || '').replace(/^(?:\s*\n)+/, '')
+}
+
 // ---- 会话 ----
 async function loadConversations() {
   try {
@@ -358,7 +363,7 @@ onMounted(async () => {
           <div v-for="(msg, i) in messages" :key="i" class="msg-row" :class="msg.role">
             <div class="bubble" :class="{ 'error-bubble': msg.isError }">
               <div v-if="msg.role === 'user'" class="bubble-text">{{ msg.content }}</div>
-              <div v-else class="bubble-text bubble-pre">{{ msg.content }}</div>
+              <div v-else class="bubble-text bubble-pre">{{ trimLead(msg.content) }}</div>
               <div v-if="msg.role === 'assistant' && msg.citations && msg.citations.length" class="citations">
                 <span class="cite-label">引用来源</span>
                 <el-tag
@@ -396,7 +401,7 @@ onMounted(async () => {
           <div v-if="streamInView" class="msg-row assistant">
             <div class="bubble">
               <div class="bubble-text bubble-pre">
-                {{ streamingText || '思考中…' }}<span class="cursor">▍</span>
+                {{ trimLead(streamingText) || '思考中…' }}<span class="cursor">▍</span>
               </div>
               <div v-if="streamingText && streamCitations.length" class="citations">
                 <span class="cite-label">引用来源</span>
