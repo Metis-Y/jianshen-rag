@@ -21,6 +21,11 @@ CHAT_API_KEY = os.getenv("CHAT_API_KEY", SILICONFLOW_API_KEY)
 CHAT_BASE_URL = os.getenv("CHAT_BASE_URL", "https://api.siliconflow.cn/v1")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "deepseek-ai/DeepSeek-V3")
 
+# 重排：粗召回候选后用 rerank 模型精排（key 缺省复用 SILICONFLOW_API_KEY）
+RERANK_API_KEY = os.getenv("RERANK_API_KEY", SILICONFLOW_API_KEY)
+RERANK_BASE_URL = os.getenv("RERANK_BASE_URL", "https://api.siliconflow.cn/v1")
+RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
+
 # 检索/切分 超参
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "80"))

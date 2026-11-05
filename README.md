@@ -85,6 +85,7 @@ python scripts/seed_demo.py
 | CHAT_BASE_URL / CHAT_MODEL | https://api.siliconflow.cn/v1 / deepseek-ai/DeepSeek-V3 | 对话模型（可按平台替换） |
 | JWT_SECRET / JWT_TTL_HOURS | dev-secret-change-me / 72 | 生产必须改密钥 |
 | CHUNK_SIZE / CHUNK_OVERLAP / TOPK | 500 / 80 / 5 | 切分与检索参数 |
+| RERANK_BASE_URL / RERANK_MODEL | https://api.siliconflow.cn/v1 / BAAI/bge-reranker-v2-m3 | 检索精排模型（API Key 缺省复用 SILICONFLOW_API_KEY，设为空则走纯向量粗排） |
 | MAX_UPLOAD_MB | 20 | 上传大小上限 |
 | DATA_DIR / SQLITE_PATH / UPLOAD_DIR / CHROMA_DB_PATH | ./data 等 | 数据目录（数据库/附件/向量库） |
 

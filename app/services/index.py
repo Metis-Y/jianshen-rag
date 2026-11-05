@@ -4,7 +4,9 @@
 embedding 走 OpenAI 兼容接口（config.EMBEDDING_*），向量为单精度维度序列，
 Chroma 只存向量 + 明文 + metadata（值仅 str/int，不含 None）。
 """
+import json
 import logging
+import urllib.request
 
 import chromadb
 from chromadb.config import Settings
@@ -17,6 +19,7 @@ log = logging.getLogger("app")
 _COLLECTION_NAME = "kb_main"
 _EMBED_BATCH = 32          # embedding 请求批量上限兜底（硅基流动等平台的稳定批量）
 _META_TEXT_MAX = 200       # 元数据文本截断，避免超长文件名/来源撑爆 Chroma 元数据
+_COARSE_FACTOR = 4         # 粗召回候选 = top_k × 4（不低于 16），进入 rerank 精排
 
 _client = chromadb.PersistentClient(
     path=config.CHROMA_DB_PATH,
@@ -104,6 +107,33 @@ def remove_document(doc_id: int) -> None:
     _collection.delete(where={"doc_id": int(doc_id)})
 
 
+def _rerank(question: str, hits: list[dict]) -> list[dict]:
+    """rerank 精排：按"问题 ↔ 文本"语义相关性打分，返回降序 hits。
+
+    API 协议：POST {base}/rerank，body {model, query, documents[]}，
+    返回 results[{index, relevance_score}]（已按分数降序）。
+    """
+    body = json.dumps(
+        {
+            "model": config.RERANK_MODEL,
+            "query": question,
+            "documents": [h["text"] for h in hits],
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        config.RERANK_BASE_URL.rstrip("/") + "/rerank", data=body, method="POST"
+    )
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {config.RERANK_API_KEY}")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    ordered = [hits[r["index"]] for r in data.get("results", [])]
+    # 兜底：API 返回不全时，把遗漏候选按粗排顺序补在末尾
+    seen = {id(obj) for obj in ordered}
+    ordered += [h for h in hits if id(h) not in seen]
+    return ordered
+
+
 def retrieve(
     owner_id: int,
     question: str,
@@ -133,9 +163,10 @@ def retrieve(
 
     # 向量化 question（embedding 维度直接透传，无特殊处理）
     query_vec = _embed([question])[0]
+    recall_k = max(int(top_k) * _COARSE_FACTOR, 16)
     result = _collection.query(
         query_embeddings=[query_vec],
-        n_results=int(top_k),
+        n_results=recall_k,
         where=where,
     )
 
@@ -154,4 +185,11 @@ def retrieve(
                 "text": docs[0][i] if i < len(docs[0]) else "",
             }
         )
-    return hits
+
+    # 精排：候选比 top_k 多且配置了 rerank 时才走精排；失败降级用粗排顺序，不拖崩问答
+    if len(hits) > int(top_k) and config.RERANK_API_KEY:
+        try:
+            hits = _rerank(question, hits)
+        except Exception:
+            log.warning("rerank 失败，降级使用粗排结果")
+    return hits[: int(top_k)]
