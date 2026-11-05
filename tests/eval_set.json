@@ -1,0 +1,38 @@
+{
+  "说明": "M4 小评估题库：以 demo 账号的可见文档（个人 3 篇 + 公共 9 篇）命题。run_eval.py 只测检索（top5 命中），不调对话模型。tag=常识/精确词，精确词类是纯向量检索的已知软肋，单独统计。",
+  "docs": [
+    "训练计划示例.md", "减脂饮食示例.md", "动作要点示例.md",
+    "健身入门基础知识.md", "减脂饮食原则.md", "力量训练安全要点.md",
+    "有氧与力量训练的搭配.md", "睡眠与恢复指南.md", "热身与拉伸方法.md",
+    "训练与饮食常见误区.md", "增肌饮食基础.md", "体重管理与代谢常识.md"
+  ],
+  "items": [
+    {"question": "新手每周应该训练几天？", "expectDoc": "健身入门基础知识.md", "tag": "常识"},
+    {"question": "什么是渐进超负荷？", "expectDoc": "健身入门基础知识.md", "tag": "常识"},
+    {"question": "减载周应该怎么安排重量和容量？", "expectDoc": "健身入门基础知识.md", "tag": "常识"},
+    {"question": "每天热量缺口多少适合减脂？", "expectDoc": "减脂饮食原则.md", "tag": "精确词"},
+    {"question": "蛋白质每天吃多少克每公斤体重？", "expectDoc": "减脂饮食原则.md", "tag": "精确词"},
+    {"question": "忌口牛奶时早餐该喝什么替代？", "expectDoc": "减脂饮食原则.md", "tag": "常识"},
+    {"question": "深蹲时膝盖要注意什么？", "expectDoc": "力量训练安全要点.md", "tag": "常识"},
+    {"question": "硬拉圆腰了怎么纠正？", "expectDoc": "力量训练安全要点.md", "tag": "常识"},
+    {"question": "有氧和力量训练同一天怎么安排顺序？", "expectDoc": "有氧与力量训练的搭配.md", "tag": "常识"},
+    {"question": "HIIT 每周做几次合适？", "expectDoc": "有氧与力量训练的搭配.md", "tag": "精确词"},
+    {"question": "成年人每天应该睡几个小时？", "expectDoc": "睡眠与恢复指南.md", "tag": "精确词"},
+    {"question": "过度训练的信号有哪些？", "expectDoc": "睡眠与恢复指南.md", "tag": "常识"},
+    {"question": "训练前热身一般要多久？", "expectDoc": "热身与拉伸方法.md", "tag": "精确词"},
+    {"question": "静态拉伸放在训练前还是训练后？", "expectDoc": "热身与拉伸方法.md", "tag": "常识"},
+    {"question": "局部减脂存在吗？", "expectDoc": "训练与饮食常见误区.md", "tag": "常识"},
+    {"question": "肌肉会变成脂肪吗？", "expectDoc": "训练与饮食常见误区.md", "tag": "常识"},
+    {"question": "蛋白粉是药物吗？", "expectDoc": "训练与饮食常见误区.md", "tag": "常识"},
+    {"question": "增肌每天要比消耗多吃多少热量？", "expectDoc": "增肌饮食基础.md", "tag": "精确词"},
+    {"question": "增肌期体重每周增长多少合适？", "expectDoc": "增肌饮食基础.md", "tag": "精确词"},
+    {"question": "TDEE 由哪些部分组成？", "expectDoc": "体重管理与代谢常识.md", "tag": "精确词"},
+    {"question": "平台期应该怎么办？", "expectDoc": "体重管理与代谢常识.md", "tag": "常识"},
+    {"question": "深蹲 5×5 是几组几次？", "expectDoc": "训练计划示例.md", "tag": "精确词"},
+    {"question": "传统硬拉主项做几组几次？", "expectDoc": "训练计划示例.md", "tag": "精确词"},
+    {"question": "卧推下放时肘部与身体大概多少度？", "expectDoc": "动作要点示例.md", "tag": "精确词"},
+    {"question": "卧推起杠时肩胛应该怎么做？", "expectDoc": "动作要点示例.md", "tag": "常识"},
+    {"question": "训练后加餐建议什么时候安排？", "expectDoc": "减脂饮食示例.md", "tag": "常识"},
+    {"question": "一周训练容量怎么衡量进步？", "expectDoc": "训练计划示例.md", "tag": "常识"}
+  ]
+}
