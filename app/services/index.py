@@ -192,4 +192,27 @@ def retrieve(
             hits = _rerank(question, hits)
         except Exception:
             log.warning("rerank 失败，降级使用粗排结果")
-    return hits[: int(top_k)]
+    return _diversify(hits, int(top_k))
+
+
+def _diversify(hits: list[dict], top_k: int) -> list[dict]:
+    """按文档去重后再取 top_k：每份文档只保留最相关的一片，剩余位置用其他切片补齐。
+
+    长文档会切成多片，若直接取前 top_k 片，一份文档可能占满引用位——模型少了跨资料
+    综合的素材，前端引用卡片也会出现同名重复。这里优先保证"来源多样"，候选不足
+    top_k 份文档时才用同文档的其他切片补齐（限定单文档提问时即为此情况）。
+    """
+    picked: list[dict] = []
+    seen_docs: set = set()
+    leftovers: list[dict] = []
+    for hit in hits:
+        key = hit.get("doc_id")
+        if key in seen_docs:
+            leftovers.append(hit)
+            continue
+        seen_docs.add(key)
+        picked.append(hit)
+        if len(picked) >= top_k:
+            return picked[:top_k]
+    picked.extend(leftovers[: top_k - len(picked)])
+    return picked[:top_k]
