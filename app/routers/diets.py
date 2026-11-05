@@ -1,5 +1,5 @@
 """饮食记录路由（docs/API.md 第 4 节契约）。"""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -52,3 +52,20 @@ def list_diets(
         stmt = stmt.where(DietLog.date <= end)
     stmt = stmt.order_by(DietLog.date.desc(), DietLog.id.desc())
     return resp.ok({"records": [_record_out(row) for row in db.scalars(stmt).all()]})
+
+
+@router.delete("/{diet_id}")
+def delete_diet(
+    diet_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """删除一条饮食记录（仅限本人）。"""
+    row = db.get(DietLog, diet_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    if row.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权操作该记录")
+    db.delete(row)
+    db.commit()
+    return resp.ok()

@@ -121,7 +121,7 @@ def main() -> None:
             db.add(pref)
         pref.goal = "减脂"
         pref.allergies = ["牛奶"]
-        pref.targets = {"weight": 78.0, "squat": 90.0}
+        pref.targets = {"weight": 78.0, "strength": {"name": "深蹲", "value": 90.0}}
 
         db.execute(delete(WorkoutLog).where(WorkoutLog.user_id == user.id))
         db.execute(delete(BodyMetric).where(BodyMetric.user_id == user.id))

@@ -68,14 +68,16 @@ class DietIn(BaseModel):
 
 
 class PreferenceIn(BaseModel):
-    """PUT 整体覆盖：字段均可选，缺省即清空；targetWeight/targetSquat 为目标里程碑。"""
+    """PUT 整体覆盖：字段均可选，缺省即清空。
+    目标里程碑：targetWeight 目标体重；targetStrengthName/targetStrengthValue 目标力量（动作自选）。"""
 
     model_config = ConfigDict(populate_by_name=True)
 
     goal: str | None = Field(default=None, max_length=32)
     allergies: list[str] | None = None
     target_weight: float | None = Field(default=None, gt=0, alias="targetWeight")
-    target_squat: float | None = Field(default=None, gt=0, alias="targetSquat")
+    target_strength_name: str | None = Field(default=None, max_length=16, alias="targetStrengthName")
+    target_strength_value: float | None = Field(default=None, gt=0, alias="targetStrengthValue")
 
 
 # ---------- 问答（docs/API.md 第 5、6 节） ----------

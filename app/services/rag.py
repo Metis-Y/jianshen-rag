@@ -125,12 +125,17 @@ def _snapshot(db, user_id: int) -> dict:
         for w in reversed(recent)
     ]
 
-    # 目标进度：深蹲最好成绩（动作名含"深蹲"的最大重量，M2）
-    squat_max: float | None = None
+    # 目标进度：自选动作的最好成绩（名字包含匹配；兼容旧 squat 格式，M2）
+    strength_target = targets.get("strength") or {}
+    if not strength_target and targets.get("squat") is not None:
+        strength_target = {"name": "深蹲", "value": targets.get("squat")}
+    strength_name = (strength_target.get("name") or "深蹲").strip() or "深蹲"
+    strength_value = strength_target.get("value")
+    strength_max: float | None = None
     for w in db.scalars(select(WorkoutLog).where(WorkoutLog.user_id == user_id)).all():
         for ex in w.exercises or []:
-            if isinstance(ex, dict) and "深蹲" in str(ex.get("name", "")) and ex.get("weight") is not None:
-                squat_max = max(squat_max or 0.0, float(ex["weight"]))
+            if isinstance(ex, dict) and strength_name in str(ex.get("name", "")) and ex.get("weight") is not None:
+                strength_max = max(strength_max or 0.0, float(ex["weight"]))
 
     return {
         "volume30": volume30,
@@ -144,8 +149,9 @@ def _snapshot(db, user_id: int) -> dict:
         "avg_sleep": avg_sleep,
         "latest_soreness": latest_soreness,
         "target_weight": targets.get("weight"),
-        "target_squat": targets.get("squat"),
-        "squat_max": squat_max,
+        "strength_name": strength_name,
+        "strength_value": strength_value,
+        "strength_max": strength_max,
     }
 
 
@@ -165,8 +171,9 @@ def _my_data_block(snap: dict) -> str:
         lines.append(f"近30天训练总容量：{_num(snap['volume30'])}kg")
     if snap.get("recent_sessions"):
         lines.append("近3次训练（日期：容量）：" + "、".join(snap["recent_sessions"]))
-    if snap.get("squat_max") is not None and snap.get("target_squat") is None:
-        lines.append(f"深蹲目前最好成绩：{_num(snap['squat_max'])}kg")
+    if snap.get("strength_value") is None and snap.get("strength_max") is not None:
+        name = snap.get("strength_name") or "深蹲"
+        lines.append(f"{name}目前最好成绩：{_num(snap['strength_max'])}kg")
     if snap["latest_weight"] is not None:
         delta = snap["weight_delta"]
         delta_txt = ("+" if delta > 0 else "") + str(delta)
@@ -183,15 +190,16 @@ def _my_data_block(snap: dict) -> str:
             f"体重进度：当前 {_num(snap['latest_weight'])}kg / 目标 {_num(snap['target_weight'])}kg"
             f"（相差 {_num(diff)}kg）"
         )
-    if snap.get("target_squat") is not None:
-        if snap.get("squat_max") is not None:
-            left = max(0.0, snap["target_squat"] - snap["squat_max"])
+    if snap.get("strength_value") is not None:
+        name = snap.get("strength_name") or "深蹲"
+        if snap.get("strength_max") is not None:
+            left = max(0.0, snap["strength_value"] - snap["strength_max"])
             lines.append(
-                f"深蹲进度：目前 {_num(snap['squat_max'])}kg / 目标 {_num(snap['target_squat'])}kg"
+                f"{name}进度：目前 {_num(snap['strength_max'])}kg / 目标 {_num(snap['strength_value'])}kg"
                 f"（还差 {_num(round(left, 1))}kg）"
             )
         else:
-            lines.append(f"深蹲目标：{_num(snap['target_squat'])}kg（暂无深蹲记录）")
+            lines.append(f"{name}目标：{_num(snap['strength_value'])}kg（暂无相关动作记录）")
     if snap["allergies"]:
         lines.append(f"忌口：{'、'.join(snap['allergies'])}")
     return "\n".join(lines)

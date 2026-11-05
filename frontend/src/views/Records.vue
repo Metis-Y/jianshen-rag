@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api.js'
 
 // ---------- 日期工具 ----------
@@ -209,6 +209,25 @@ async function submitDiet() {
   }
 }
 
+async function removeDiet(row) {
+  try {
+    await ElMessageBox.confirm('确定删除这条饮食记录吗？', '删除确认', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch (e) {
+    return // 用户取消
+  }
+  try {
+    await api.delete(`/diets/${row.id}`)
+    ElMessage.success('已删除')
+    await fetchDiets()
+  } catch (e) {
+    // 错误信息已由拦截器统一 alert
+  }
+}
+
 // ---------- 偏好 ----------
 const GOAL_OPTIONS = [
   { label: '减脂', value: '减脂' },
@@ -217,7 +236,8 @@ const GOAL_OPTIONS = [
 ]
 const goal = ref(null)
 const targetWeight = ref(null)
-const targetSquat = ref(null)
+const targetStrengthName = ref('')
+const targetStrengthValue = ref(null)
 const allergyTags = ref([])
 const allergyInput = ref('')
 const preferenceLoading = ref(false)
@@ -241,7 +261,8 @@ async function fetchPreference() {
     const data = await api.get('/preference')
     goal.value = (data && data.goal) || null
     targetWeight.value = (data && data.targetWeight) || null
-    targetSquat.value = (data && data.targetSquat) || null
+    targetStrengthName.value = (data && data.targetStrengthName) || ''
+    targetStrengthValue.value = (data && data.targetStrengthValue) || null
     allergyTags.value = (data && Array.isArray(data.allergies) && data.allergies) || []
   } catch (e) {
     // 错误信息已由拦截器统一 alert
@@ -262,7 +283,8 @@ async function savePreference() {
       goal: goal.value || null,
       allergies: allergyTags.value.map((t) => t.trim()).filter(Boolean),
       targetWeight: targetWeight.value ?? null,
-      targetSquat: targetSquat.value ?? null
+      targetStrengthName: targetStrengthName.value.trim() || null,
+      targetStrengthValue: targetStrengthValue.value ?? null
     })
     ElMessage.success('偏好已保存')
     await fetchPreference()
@@ -599,6 +621,13 @@ const recentSeries = computed(() => {
                 </template>
               </el-table-column>
               <el-table-column prop="content" label="内容" min-width="220" show-overflow-tooltip />
+              <el-table-column label="操作" width="80">
+                <template #default="{ row }">
+                  <el-button link type="danger" size="small" @click="removeDiet(row)">
+                    删除
+                  </el-button>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
         </el-tab-pane>
@@ -634,16 +663,23 @@ const recentSeries = computed(() => {
                 />
                 <span class="unit">kg</span>
               </el-form-item>
-              <el-form-item label="目标深蹲">
-                <el-input-number
-                  v-model="targetSquat"
-                  :min="0"
-                  :step="2.5"
-                  placeholder="如 100"
-                  controls-position="right"
-                  style="width: 200px"
-                />
-                <span class="unit">kg</span>
+              <el-form-item label="力量目标">
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <el-input
+                    v-model="targetStrengthName"
+                    placeholder="动作（如深蹲）"
+                    style="width: 140px"
+                  />
+                  <el-input-number
+                    v-model="targetStrengthValue"
+                    :min="0"
+                    :step="2.5"
+                    placeholder="目标重量"
+                    controls-position="right"
+                    style="width: 140px"
+                  />
+                  <span class="unit">kg</span>
+                </div>
               </el-form-item>
               <el-form-item label="长期忌口">
                 <div class="tag-area">

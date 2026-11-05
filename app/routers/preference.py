@@ -11,15 +11,22 @@ router = APIRouter(prefix="/api/preference", tags=["preference"])
 
 
 def _pref_out(pref: Preference | None) -> dict:
-    """未设置时：goal=null、allergies=[]、目标=null。"""
+    """未设置时：goal=null、allergies=[]、目标=null（兼容旧的 squat 格式）。"""
     if pref is None:
-        return {"goal": None, "allergies": [], "targetWeight": None, "targetSquat": None}
+        return {
+            "goal": None, "allergies": [],
+            "targetWeight": None, "targetStrengthName": None, "targetStrengthValue": None,
+        }
     t = pref.targets or {}
+    strength = t.get("strength") or {}
+    name = strength.get("name") or ("深蹲" if t.get("squat") is not None else None)
+    value = strength.get("value") if strength.get("value") is not None else t.get("squat")
     return {
         "goal": pref.goal,
         "allergies": pref.allergies if pref.allergies else [],
         "targetWeight": t.get("weight"),
-        "targetSquat": t.get("squat"),
+        "targetStrengthName": name,
+        "targetStrengthValue": value,
     }
 
 
@@ -43,6 +50,11 @@ def put_pref(
         db.add(pref)
     pref.goal = body.goal
     pref.allergies = body.allergies if body.allergies is not None else []
-    pref.targets = {"weight": body.target_weight, "squat": body.target_squat}
+    if body.target_strength_value is not None or body.target_strength_name:
+        name = (body.target_strength_name or "深蹲").strip() or "深蹲"
+        strength = {"name": name, "value": body.target_strength_value}
+    else:
+        strength = None
+    pref.targets = {"weight": body.target_weight, "strength": strength}
     db.commit()
     return resp.ok(_pref_out(pref))
