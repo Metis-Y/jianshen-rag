@@ -10,7 +10,7 @@
 - **账号体系**：注册 / 登录（JWT），数据按用户隔离
 - **资料库**：上传 PDF / Word / Markdown，自动解析与切分；支持秒传（MD5）、
   失败原因提示、重试、删除（磁盘 + 向量 + 记录三处同步清理）
-- **公共知识库**：内置 9 份健身语料（训练 / 饮食 / 恢复 / 安全），system 账号持有，
+- **公共知识库**：内置 23 份健身语料（训练进阶 / 营养补剂 / 人群场景 / 恢复损伤 / 体成分评估），system 账号持有，
   全体用户检索可见；你上传的个人资料优先级相同、按相关性参与检索
 - **训练记录**：动作/重量/组数/次数，自动统计容量（Σ重量×次数×组数）；快速记录模式；删除
 - **体征与饮食**：体重 + 睡眠时长 + 酸痛度；三餐（早/午/晚）可选填、可删除
@@ -73,7 +73,10 @@ python scripts/seed_demo.py
 
 一次执行完成四件事：① 创建 demo 账号（demo / demo1234）并写入 3 天训练、体重、
 睡眠/酸痛、忌口与目标；② 给 demo 上传 3 份个人示例语料（samples/）；
-③ 重建公共知识库（samples/public/ 下 9 份语料）；④ 归一化存量向量元数据。
+③ 重建公共知识库（samples/public/ 下 23 份语料）；④ 归一化存量向量元数据。
+
+只改公共语料时，用 `python scripts/rebuild_public_kb.py` 单独重建公共库，不重置 demo 记录。
+语料清单与出处见 [scripts/corpus_manifest.py](scripts/corpus_manifest.py) 与 [docs/CORPUS_SOURCES.md](docs/CORPUS_SOURCES.md)。
 可重复执行（记录类会重置，资料走 MD5 秒传）。
 
 ## 配置项（环境变量）
@@ -107,7 +110,10 @@ python scripts/seed_demo.py
 │                          # preference / chat / conversations / stats
 ├── frontend/              # Vue 3 前端（登录/资料/记录/问答/首页）
 ├── scripts/seed_demo.py   # 演示数据种子（demo 账号 + 语料 + 公共库）
+├── scripts/corpus_manifest.py  # 公共语料清单（文件名 + 分类）
+├── scripts/rebuild_public_kb.py # 只重建公共知识库（不动 demo 记录）
 ├── samples/               # 个人示例语料 + public/ 公共知识库语料
 ├── docs/API.md            # 接口契约
+├── docs/CORPUS_SOURCES.md # 公共语料依据与写作约定
 └── requirements.txt
 ```
