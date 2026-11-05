@@ -4,27 +4,18 @@
 - `event: done` 由路由层在生成器正常结束后补发，本模块通过 state 字典
   回传落库后的 conversationId/messageId；中途 error 为终态（不再发 done）；
 - 生成器内检索/聚合/落库共用同一个 SessionLocal 会话（开在生成器线程里，
-  与请求依赖线程解耦），异常兜底记录日志、不影响已推流内容。
+  与请求依赖线程解耦），异常兜底记录日志、不影响已推流内容；
+- 数据聚合口径在 app/repositories/summary（只给真实小数字，杜绝编造）。
 """
-import datetime as dt
 import json
 import logging
 from typing import Iterator
 
 from openai import OpenAI
-from sqlalchemy import select
 
 from app import config
-from app.db import (
-    BodyMetric,
-    Conversation,
-    Message,
-    Preference,
-    SessionLocal,
-    User,
-    WorkoutLog,
-)
-from app.routers.workouts import exercise_volume  # 复用容量聚合公式（weight×sets×reps）
+from app.db import Conversation, Message, SessionLocal, User
+from app.repositories.summary import fmt_num, summarize
 from app.services import index
 
 log = logging.getLogger("app")
@@ -48,118 +39,6 @@ def sse(event: str, data: dict | list) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _num(value: float) -> int | float:
-    """12000.0 → 12000；1812.5 保留一位。"""
-    v = float(value)
-    return int(v) if v.is_integer() else round(v, 1)
-
-
-def _snapshot(db, user_id: int) -> dict:
-    """聚合用户数据（真实小数字）：近 30 天容量/体重 + 偏好 + 有无记录标记。"""
-    since30 = dt.date.today() - dt.timedelta(days=29)
-
-    workouts30 = db.scalars(
-        select(WorkoutLog).where(WorkoutLog.user_id == user_id, WorkoutLog.date >= since30)
-    ).all()
-    volume30 = sum(exercise_volume(w.exercises) for w in workouts30)
-    has_any_workout = (
-        db.scalar(select(WorkoutLog.id).where(WorkoutLog.user_id == user_id).limit(1)) is not None
-    )
-
-    metrics30 = db.scalars(
-        select(BodyMetric)
-        .where(
-            BodyMetric.user_id == user_id,
-            BodyMetric.weight.is_not(None),
-            BodyMetric.date >= since30,
-        )
-        .order_by(BodyMetric.date.asc(), BodyMetric.id.asc())
-    ).all()
-    has_any_metric = (
-        db.scalar(
-            select(BodyMetric.id)
-            .where(BodyMetric.user_id == user_id, BodyMetric.weight.is_not(None))
-            .limit(1)
-        )
-        is not None
-    )
-    latest_weight = metrics30[-1].weight if metrics30 else None
-    weight_delta: float | None = None
-    if len(metrics30) > 1:
-        weight_delta = round(metrics30[-1].weight - metrics30[0].weight, 1)
-    elif len(metrics30) == 1:
-        weight_delta = 0
-
-    # 恢复线：近 7 天平均睡眠 + 最近一次酸痛度（M1）
-    since7 = dt.date.today() - dt.timedelta(days=6)
-    sleep_rows = db.scalars(
-        select(BodyMetric).where(
-            BodyMetric.user_id == user_id,
-            BodyMetric.sleep_hours.is_not(None),
-            BodyMetric.date >= since7,
-        )
-    ).all()
-    avg_sleep = (
-        round(sum(m.sleep_hours for m in sleep_rows) / len(sleep_rows), 1)
-        if sleep_rows else None
-    )
-    latest_sore_metric = db.scalar(
-        select(BodyMetric)
-        .where(BodyMetric.user_id == user_id, BodyMetric.soreness.is_not(None))
-        .order_by(BodyMetric.date.desc(), BodyMetric.id.desc())
-        .limit(1)
-    )
-    latest_soreness = latest_sore_metric.soreness if latest_sore_metric else None
-
-    pref = db.get(Preference, user_id)
-    targets = (pref.targets or {}) if pref else {}
-
-    recent = db.scalars(
-        select(WorkoutLog)
-        .where(WorkoutLog.user_id == user_id)
-        .order_by(WorkoutLog.date.desc(), WorkoutLog.id.desc())
-        .limit(3)
-    ).all()
-    recent_sessions = [
-        f"{w.date.month}-{w.date.day}：{_num(exercise_volume(w.exercises))}kg"
-        for w in reversed(recent)
-    ]
-
-    # 目标进度：每条力量目标的最好成绩（名字包含匹配；兼容旧单目标/squat 格式，M2）
-    strength_goals = targets.get("strength") or []
-    if isinstance(strength_goals, dict):
-        strength_goals = [strength_goals]
-    if not strength_goals and targets.get("squat") is not None:
-        strength_goals = [{"name": "深蹲", "value": targets.get("squat")}]
-    if not strength_goals:
-        strength_goals = [{"name": "深蹲", "value": None}]  # 无目标时仅展示最好成绩
-    goal_progress: list[dict] = []
-    for g in strength_goals:
-        name = (str(g.get("name") or "深蹲")).strip() or "深蹲"
-        value = g.get("value")
-        mx: float | None = None
-        for w in db.scalars(select(WorkoutLog).where(WorkoutLog.user_id == user_id)).all():
-            for ex in w.exercises or []:
-                if isinstance(ex, dict) and name in str(ex.get("name", "")) and ex.get("weight") is not None:
-                    mx = max(mx or 0.0, float(ex["weight"]))
-        goal_progress.append({"name": name, "value": value, "max": mx})
-
-    return {
-        "volume30": volume30,
-        "recent_sessions": recent_sessions,
-        "has_any_workout": has_any_workout,
-        "latest_weight": latest_weight,
-        "weight_delta": weight_delta,
-        "has_any_metric": has_any_metric,
-        "goal": pref.goal if pref else None,
-        "allergies": pref.allergies if pref and pref.allergies else [],
-        "avg_sleep": avg_sleep,
-        "latest_soreness": latest_soreness,
-        "target_weight": targets.get("weight"),
-        "goal_progress": goal_progress,
-    }
-
-
 def _materials_block(chunks: list[dict]) -> str:
     """【资料】块：按检索顺序编号 [1][2]…，含 doc_title/source/text。"""
     parts = ["【资料】"]
@@ -173,21 +52,22 @@ def _my_data_block(snap: dict) -> str:
     """【我的数据】块：仅有数据的行才出现（容量/体重/恢复/目标进度/忌口）。"""
     lines: list[str] = []
     if snap["has_any_workout"]:
-        lines.append(f"近30天训练总容量：{_num(snap['volume30'])}kg")
+        lines.append(f"近30天训练总容量：{fmt_num(snap['volume30'])}kg")
     if snap.get("recent_sessions"):
         lines.append("近3次训练（日期：容量）：" + "、".join(snap["recent_sessions"]))
     for g in snap.get("goal_progress", []):
         name, value, mx = g["name"], g["value"], g["max"]
         if value is None:
             if mx is not None:
-                lines.append(f"{name}目前最好成绩：{_num(mx)}kg")
+                lines.append(f"{name}目前最好成绩：{fmt_num(mx)}kg")
         elif mx is not None:
             left = max(0.0, value - mx)
             lines.append(
-                f"{name}进度：目前 {_num(mx)}kg / 目标 {_num(value)}kg（还差 {_num(round(left, 1))}kg）"
+                f"{name}进度：目前 {fmt_num(mx)}kg / 目标 {fmt_num(value)}kg"
+                f"（还差 {fmt_num(round(left, 1))}kg）"
             )
         else:
-            lines.append(f"{name}目标：{_num(value)}kg（暂无相关动作记录）")
+            lines.append(f"{name}目标：{fmt_num(value)}kg（暂无相关动作记录）")
     if snap["latest_weight"] is not None:
         delta = snap["weight_delta"]
         delta_txt = ("+" if delta > 0 else "") + str(delta)
@@ -201,8 +81,8 @@ def _my_data_block(snap: dict) -> str:
     if snap.get("target_weight") is not None and snap["latest_weight"] is not None:
         diff = abs(round(snap["latest_weight"] - snap["target_weight"], 1))
         lines.append(
-            f"体重进度：当前 {_num(snap['latest_weight'])}kg / 目标 {_num(snap['target_weight'])}kg"
-            f"（相差 {_num(diff)}kg）"
+            f"体重进度：当前 {fmt_num(snap['latest_weight'])}kg / 目标 {fmt_num(snap['target_weight'])}kg"
+            f"（相差 {fmt_num(diff)}kg）"
         )
     if snap["allergies"]:
         lines.append(f"忌口：{'、'.join(snap['allergies'])}")
@@ -275,8 +155,8 @@ def answer_stream(
             yield sse("error", {"message": "检索服务异常，请稍后重试"})
             return
 
-        # 2) 用户数据快照（每次提问都带，模型自行决定用不用）
-        snap = _snapshot(db, user.id)
+        # 2) 用户数据快照（每次提问都带，模型自行决定用不用；口径见 repositories/summary）
+        snap = summarize(db, user.id)
 
         # 信息门控：既无资料命中、也无任何记录时才不调模型；其余一律调模型，
         # 用资料还是用数据、"记录不足"/"没有相关内容"，全由模型按系统规则自行判断。
@@ -302,7 +182,7 @@ def answer_stream(
         if chunks:
             blocks.append(_materials_block(chunks))
         my_data = _my_data_block(snap)
-        if my_data:  # 效果类或有数据 → 附结构化数字
+        if my_data:  # 有数据 → 附结构化数字
             blocks.append(f"【我的数据】\n{my_data}")
         prompt = "\n\n".join(blocks + [f"问题：{question}"])
         messages = [

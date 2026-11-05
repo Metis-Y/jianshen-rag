@@ -2,12 +2,13 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import resp
 from app.auth import get_current_user
 from app.db import User, WorkoutLog, get_db
+from app.repositories import records as records_repo
+from app.repositories.records import exercise_volume
 from app.schemas import WorkoutIn
 
 router = APIRouter(prefix="/api/workouts", tags=["workouts"])
@@ -27,17 +28,6 @@ def parse_date_range(from_: str | None, to_: str | None) -> tuple[date | None, d
     if start is not None and end is not None and start > end:
         raise HTTPException(status_code=400, detail="from 不能晚于 to")
     return start, end
-
-
-def exercise_volume(exercises: list) -> float:
-    """容量 = Σ weight×sets×reps；三项缺一（快速模式）的动作不参与统计但保留记录。"""
-    total = 0.0
-    for item in exercises or []:
-        weight, sets, reps = item.get("weight"), item.get("sets"), item.get("reps")
-        if weight is None or sets is None or reps is None:
-            continue
-        total += float(weight) * int(sets) * int(reps)
-    return total
 
 
 def _fmt_num(value: float | int) -> int | float:
@@ -83,15 +73,10 @@ def list_workouts(
     db: Session = Depends(get_db),
 ):
     start, end = parse_date_range(from_, to)
-    stmt = select(WorkoutLog).where(WorkoutLog.user_id == user.id)
-    if start is not None:
-        stmt = stmt.where(WorkoutLog.date >= start)
-    if end is not None:
-        stmt = stmt.where(WorkoutLog.date <= end)
-    stmt = stmt.order_by(WorkoutLog.date.desc(), WorkoutLog.id.desc())
-    records = [_record_out(row) for row in db.scalars(stmt).all()]
-    total = _fmt_num(sum(record["volume"] for record in records))
-    return resp.ok({"totalVolume": total, "records": records})
+    rows = records_repo.workout_rows(db, user.id, start, end)
+    items = [_record_out(row) for row in rows]
+    total = _fmt_num(sum(record["volume"] for record in items))
+    return resp.ok({"totalVolume": total, "records": items})
 
 
 @router.delete("/{workout_id}")
@@ -101,7 +86,7 @@ def delete_workout(
     db: Session = Depends(get_db),
 ):
     """删除一条训练记录（仅限本人）。"""
-    row = db.get(WorkoutLog, workout_id)
+    row = records_repo.get_workout(db, workout_id)
     if row is None:
         raise HTTPException(status_code=404, detail="记录不存在")
     if row.user_id != user.id:

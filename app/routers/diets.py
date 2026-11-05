@@ -1,11 +1,11 @@
 """饮食记录路由（docs/API.md 第 4 节契约）。"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import resp
 from app.auth import get_current_user
 from app.db import DietLog, User, get_db
+from app.repositories import records as records_repo
 from app.routers.workouts import parse_date_range
 from app.schemas import DietIn
 
@@ -45,13 +45,8 @@ def list_diets(
     db: Session = Depends(get_db),
 ):
     start, end = parse_date_range(from_, to)
-    stmt = select(DietLog).where(DietLog.user_id == user.id)
-    if start is not None:
-        stmt = stmt.where(DietLog.date >= start)
-    if end is not None:
-        stmt = stmt.where(DietLog.date <= end)
-    stmt = stmt.order_by(DietLog.date.desc(), DietLog.id.desc())
-    return resp.ok({"records": [_record_out(row) for row in db.scalars(stmt).all()]})
+    rows = records_repo.diet_rows(db, user.id, start, end)
+    return resp.ok({"records": [_record_out(row) for row in rows]})
 
 
 @router.delete("/{diet_id}")
@@ -61,7 +56,7 @@ def delete_diet(
     db: Session = Depends(get_db),
 ):
     """删除一条饮食记录（仅限本人）。"""
-    row = db.get(DietLog, diet_id)
+    row = records_repo.get_diet(db, diet_id)
     if row is None:
         raise HTTPException(status_code=404, detail="记录不存在")
     if row.user_id != user.id:

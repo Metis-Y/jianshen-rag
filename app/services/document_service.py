@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import config
 from app.db import Document, User
+from app.repositories import documents as documents_repo
 from app.services import index, pipeline
 
 log = logging.getLogger("app")
@@ -49,13 +50,7 @@ def create_document(
     md5 = _md5(tmp_path)
 
     # 秒传：同用户同 MD5 且已就绪 → 直接引用
-    existing = db.scalar(
-        select(Document).where(
-            Document.user_id == user.id,
-            Document.file_md5 == md5,
-            Document.status == "READY",
-        )
-    )
+    existing = documents_repo.find_dedup(db, user.id, md5)
     if existing:
         os.remove(tmp_path)
         return _upload_out(existing, dedup=True)
@@ -119,7 +114,7 @@ def _upload_out(doc: Document, dedup: bool) -> dict:
 
 
 def _get_owned(db: Session, user_id: int, doc_id: int) -> Document:
-    doc = db.get(Document, doc_id)
+    doc = documents_repo.get(db, doc_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     if doc.user_id != user_id:
@@ -128,12 +123,7 @@ def _get_owned(db: Session, user_id: int, doc_id: int) -> Document:
 
 
 def list_documents(db: Session, user: User, category: str | None, page: int, size: int) -> dict:
-    stmt = select(Document).where(Document.user_id == user.id)
-    if category:
-        stmt = stmt.where(Document.category == category)
-    stmt = stmt.order_by(Document.id.desc()).offset((page - 1) * size).limit(size)
-    rows = db.scalars(stmt).all()
-    total = len(db.scalars(select(Document).where(Document.user_id == user.id)).all())
+    total, rows = documents_repo.page(db, user.id, category, page, size)
     return {
         "total": total,
         "page": page,

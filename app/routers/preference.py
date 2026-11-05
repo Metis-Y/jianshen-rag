@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app import resp
 from app.auth import get_current_user
 from app.db import Preference, User, get_db
+from app.repositories import users
 from app.schemas import PreferenceIn
 
 router = APIRouter(prefix="/api/preference", tags=["preference"])
@@ -33,7 +34,7 @@ def get_pref(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return resp.ok(_pref_out(db.get(Preference, user.id)))
+    return resp.ok(_pref_out(users.get_preference(db, user.id)))
 
 
 @router.put("")
@@ -42,7 +43,7 @@ def put_pref(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    pref = db.get(Preference, user.id)
+    pref = users.get_preference(db, user.id)
     if pref is None:  # 注册时已建行，此处兜底
         pref = Preference(user_id=user.id)
         db.add(pref)

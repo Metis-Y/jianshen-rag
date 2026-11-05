@@ -1,11 +1,11 @@
 """体征记录路由（docs/API.md 第 4 节契约）：最新值 + 序列 + 首末变化量。"""
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import resp
 from app.auth import get_current_user
 from app.db import BodyMetric, User, get_db
+from app.repositories import records as records_repo
 from app.routers.workouts import parse_date_range
 from app.schemas import MetricIn
 
@@ -40,16 +40,7 @@ def list_metrics(
     db: Session = Depends(get_db),
 ):
     start, end = parse_date_range(from_, to)
-    stmt = (
-        select(BodyMetric)
-        .where(BodyMetric.user_id == user.id)
-        .where(BodyMetric.weight.is_not(None))
-    )
-    if start is not None:
-        stmt = stmt.where(BodyMetric.date >= start)
-    if end is not None:
-        stmt = stmt.where(BodyMetric.date <= end)
-    stmt = stmt.order_by(BodyMetric.date.asc(), BodyMetric.id.asc())
+    span = records_repo.metric_rows(db, user.id, start, end)
     series = [
         {
             "date": row.date.isoformat(),
@@ -57,7 +48,7 @@ def list_metrics(
             "sleepHours": row.sleep_hours,
             "soreness": row.soreness,
         }
-        for row in db.scalars(stmt).all()
+        for row in span
     ]
     if not series:
         return resp.ok({"latest": None, "delta": None, "series": []})

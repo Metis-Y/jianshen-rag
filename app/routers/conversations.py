@@ -2,14 +2,16 @@
 
 - /api/conversations：列表 / 消息 / 删除（全部归属校验）
 - /api/messages/{id}/feedback：回答反馈（同一用户同消息幂等覆盖）
+查询已下沉 app/repositories/chat。
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from app import resp
 from app.auth import get_current_user
 from app.db import Conversation, Feedback, Message, User, get_db
+from app.repositories import chat as chat_repo
 from app.schemas import FeedbackIn
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
@@ -18,7 +20,7 @@ feedback_router = APIRouter(prefix="/api/messages", tags=["feedback"])
 
 def _get_owned_conv(db: Session, user: User, conv_id: int) -> Conversation:
     """会话归属校验：不存在 404，非本人 403。"""
-    conv = db.get(Conversation, conv_id)
+    conv = chat_repo.get_conversation(db, conv_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="会话不存在")
     if conv.user_id != user.id:
@@ -44,17 +46,7 @@ def list_conversations(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    total = (
-        db.scalar(select(func.count()).select_from(Conversation).where(Conversation.user_id == user.id))
-        or 0
-    )
-    rows = db.scalars(
-        select(Conversation)
-        .where(Conversation.user_id == user.id)
-        .order_by(Conversation.id.desc())
-        .offset((page - 1) * size)
-        .limit(size)
-    ).all()
+    total, rows = chat_repo.conversations_page(db, user.id, page, size)
     return resp.ok(
         {
             "total": total,
@@ -68,6 +60,7 @@ def list_conversations(
     )
 
 
+#查询回显
 @router.get("/{conv_id}/messages")
 def list_messages(
     conv_id: int,
@@ -75,21 +68,7 @@ def list_messages(
     db: Session = Depends(get_db),
 ):
     conv = _get_owned_conv(db, user, conv_id)
-    rows = db.scalars(
-        select(Message)
-        .where(Message.conversation_id == conv.id)
-        .order_by(Message.id.asc())
-    ).all()
-    # 当前用户对各消息的反馈（true/false，未反馈为 null），供前端回显
-    fb_map: dict[int, bool] = {}
-    if rows:
-        fbs = db.scalars(
-            select(Feedback).where(
-                Feedback.message_id.in_([m.id for m in rows]),
-                Feedback.user_id == user.id,
-            )
-        ).all()
-        fb_map = {fb.message_id: fb.is_positive for fb in fbs}
+    rows, fb_map = chat_repo.messages_with_feedback(db, conv.id, user.id)
     return resp.ok({"list": [_message_out(m, fb_map.get(m.id)) for m in rows]})
 
 
@@ -100,7 +79,7 @@ def delete_conversation(
     db: Session = Depends(get_db),
 ):
     conv = _get_owned_conv(db, user, conv_id)
-    msg_ids = db.scalars(select(Message.id).where(Message.conversation_id == conv.id)).all()
+    msg_ids = chat_repo.message_ids(db, conv.id)
     if msg_ids:
         db.execute(delete(Feedback).where(Feedback.message_id.in_(msg_ids)))
         db.execute(delete(Message).where(Message.conversation_id == conv.id))
@@ -116,19 +95,14 @@ def feedback(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    msg = db.get(Message, message_id)
+    msg = chat_repo.get_message(db, message_id)
     if msg is None:
         raise HTTPException(status_code=404, detail="消息不存在")
-    conv = db.get(Conversation, msg.conversation_id)
+    conv = chat_repo.get_conversation(db, msg.conversation_id)
     if conv is None or conv.user_id != user.id:
         raise HTTPException(status_code=403, detail="无权操作该消息")
 
-    row = db.scalar(
-        select(Feedback).where(
-            Feedback.message_id == message_id,
-            Feedback.user_id == user.id,
-        )
-    )
+    row = chat_repo.get_feedback(db, user.id, message_id)
     if body.positive is None:
         # 取消反馈：删除已有记录（幂等）
         if row is not None:

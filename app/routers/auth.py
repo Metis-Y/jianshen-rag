@@ -1,12 +1,12 @@
 """认证路由：注册 / 登录 / 当前用户。"""
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import resp
 from app.auth import create_token, get_current_user
 from app.db import Preference, User, get_db
+from app.repositories import users
 from app.schemas import LoginIn, MeOut, RegisterIn, TokenOut, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -22,7 +22,7 @@ def _verify(password: str, hashed: str) -> bool:
 
 @router.post("/register")
 def register(body: RegisterIn, db: Session = Depends(get_db)):
-    exists = db.scalar(select(User).where(User.username == body.username))
+    exists = users.get_by_username(db, body.username)
     if exists:
         raise HTTPException(status_code=400, detail="用户名已存在")
     user = User(username=body.username, password_hash=_hash(body.password))
@@ -35,7 +35,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
 @router.post("/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    user = db.scalar(select(User).where(User.username == body.username))
+    user = users.get_by_username(db, body.username)
     if user is None or not _verify(body.password, user.password_hash):
         raise HTTPException(status_code=400, detail="用户名或密码错误")
     token, exp = create_token(user.id)
@@ -44,7 +44,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 
 @router.get("/me")
 def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    pref = db.get(Preference, user.id)
+    pref = users.get_preference(db, user.id)
     data = MeOut(
         id=user.id,
         username=user.username,
