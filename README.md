@@ -99,6 +99,7 @@ python scripts/seed_demo.py
 │   ├── auth.py            # JWT 签发与校验
 │   ├── schemas.py         # 请求/响应模型
 │   ├── resp.py            # 统一响应包络 {code, message, data}
+│   ├── repositories/      # 数据访问层（users/documents/records/chat/summary 查询下沉）
 │   ├── services/          # pipeline 解析切分 / document_service 文档编排 /
 │   │                      # index 向量索引 / rag 聚合与双块 Prompt 问答
 │   └── routers/           # auth / documents / workouts / metrics / diets /
