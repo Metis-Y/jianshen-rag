@@ -59,14 +59,14 @@
 
 ### GET /preference
 
-返回：`data: { "goal": "减脂", "allergies": ["牛奶"], "targetWeight": 78, "targetStrengthName": "深蹲", "targetStrengthValue": 100 }`
-（未设置时 goal=null、allergies=[]、目标字段均为 null）
+返回：`data: { "goal": "减脂", "allergies": ["牛奶"], "targetWeight": 78, "strengthGoals": [ {"name": "深蹲", "value": 100} ] }`
+（未设置时 goal=null、allergies=[]、targetWeight=null、strengthGoals=[]）
 
 ### PUT /preference
 
-入参：`{ "goal": "增肌", "allergies": ["花生", "牛奶"], "targetWeight": 80, "targetStrengthName": "卧推", "targetStrengthValue": 120 }`
-（字段均可选，整体覆盖；targetWeight 目标体重 kg；targetStrengthName 目标力量动作自选，
-不填默认"深蹲"，targetStrengthValue 对应目标重量 kg）
+入参：`{ "goal": "增肌", "allergies": ["花生", "牛奶"], "targetWeight": 80, "strengthGoals": [ {"name": "卧推", "value": 120}, {"name": "深蹲", "value": 140} ] }`
+（字段均可选，整体覆盖；targetWeight 目标体重 kg；strengthGoals 力量目标列表：
+动作名自填 + 目标重量 kg，可多条、可增删）
 
 返回：更新后的完整偏好对象。
 
@@ -139,6 +139,10 @@ Query：`page, size, category?`
 { "data": { "totalVolume": 12000, "records": [ { "id": 12, "date": "2026-11-02",
   "volume": 3500, "exercises": [...], "note": "..." } ] } }
 ```
+
+### DELETE /workouts/{id} —— 删除一条训练记录
+
+仅限本人（他人记录 403）。返回：`{ "code": 1, "data": null }`。
 
 ### POST /metrics —— 记体重/体征
 
