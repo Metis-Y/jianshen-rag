@@ -30,6 +30,7 @@ from app.db import (  # noqa: E402
 )
 from app.routers.auth import _hash  # noqa: E402
 from app.services import document_service, index, pipeline  # noqa: E402
+from scripts.corpus_manifest import PUBLIC_CORPUS  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,17 +40,7 @@ SAMPLES = [
     ("动作要点示例.md", "plan"),
 ]
 
-PUBLIC_SAMPLES = [
-    ("健身入门基础知识.md", "plan"),
-    ("减脂饮食原则.md", "diet"),
-    ("力量训练安全要点.md", "plan"),
-    ("有氧与力量训练的搭配.md", "plan"),
-    ("睡眠与恢复指南.md", "other"),
-    ("热身与拉伸方法.md", "plan"),
-    ("训练与饮食常见误区.md", "other"),
-    ("增肌饮食基础.md", "diet"),
-    ("体重管理与代谢常识.md", "diet"),
-]
+# 公共语料清单统一放在 scripts/corpus_manifest.py（见 PUBLIC_CORPUS 导入）
 
 # 三天训练：固定动作与重量，容量可手工核算（深蹲 80×5×5=2000 …）
 WORKOUTS = [
@@ -165,7 +156,7 @@ def main() -> None:
             document_service.delete_document(db, sys_user, doc.id)
         if old_public:
             print(f"已清理公共知识库旧资料 {len(old_public)} 份")
-        _upload_to(db, sys_user, "public", PUBLIC_SAMPLES, is_public=True)
+        _upload_to(db, sys_user, "public", PUBLIC_CORPUS, is_public=True)
 
         # ---- 4. 向量元数据归一：为存量文档补齐 is_public 字段 ----
         ready_docs = db.scalars(select(Document).where(Document.status == "READY")).all()
