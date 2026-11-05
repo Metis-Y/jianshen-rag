@@ -59,11 +59,13 @@
 
 ### GET /preference
 
-返回：`data: { "goal": "减脂", "allergies": ["牛奶"] }`（未设置时 goal=null、allergies=[]）
+返回：`data: { "goal": "减脂", "allergies": ["牛奶"], "targetWeight": 78, "targetSquat": 100 }`
+（未设置时 goal=null、allergies=[]、targetWeight=null、targetSquat=null）
 
 ### PUT /preference
 
-入参：`{ "goal": "增肌", "allergies": ["花生", "牛奶"] }`（字段均可选，整体覆盖）
+入参：`{ "goal": "增肌", "allergies": ["花生", "牛奶"], "targetWeight": 80, "targetSquat": 120 }`
+（字段均可选，整体覆盖；targetWeight 目标体重 kg，targetSquat 目标深蹲重量 kg）
 
 返回：更新后的完整偏好对象。
 
@@ -139,14 +141,14 @@ Query：`page, size, category?`
 
 ### POST /metrics —— 记体重/体征
 
-入参：`{ "date": "2026-11-02", "weight": 72.3, "bodyFat": null, "sleepHours": null, "soreness": null }`
-（后三项预留，一期可不传）
+入参：`{ "date": "2026-11-02", "weight": 72.3, "bodyFat": null, "sleepHours": 7.5, "soreness": 3 }`
+（bodyFat 预留；sleepHours 睡眠时长小时、soreness 酸痛度 1~5，用于恢复线问答）
 
 返回：`data: { "id": 5 }`
 
 ### GET /metrics?from=&to=
 
-返回：`data: { "latest": { "date": "2026-11-02", "weight": 72.3 }, "delta": -0.6, "series": [ { "date": "...", "weight": 72.9 }, ... ] }`
+返回：`data: { "latest": { "date": "2026-11-02", "weight": 72.3, "sleepHours": 7.5, "soreness": 3 }, "delta": -0.6, "series": [ { "date": "...", "weight": 72.9, "sleepHours": 7.0, "soreness": 2 }, ... ] }`
 
 ### POST /diets —— 记饮食
 
@@ -194,8 +196,9 @@ data: {"conversationId":2,"messageId":9}
 | done | 结束 | `{conversationId, messageId}` |
 | error | 上游失败 | `{message}` |
 
-效果类问题（题中含"趋势/进步/变化"或后端判定）：后端**先聚合 SQLite 数据**（真实小数字）
-作为【我的数据】块拼进 Prompt，禁止 LLM 编造；记录不足时回答"记录不足，无法判断"。
+后端每次提问都**先聚合 SQLite 真实数据**（容量/体重/睡眠/酸痛/目标进度）作为【我的数据】块、
+再检索 topK 文档块作为【资料】块拼进 Prompt；用哪个来源、以及"记录不足/没有相关内容"等
+退化话术，均由模型按系统提示词自行判断，禁止编造。
 
 ## 6. 会话与反馈
 
