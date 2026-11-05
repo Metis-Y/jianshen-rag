@@ -71,9 +71,9 @@ WORKOUTS = [
 ]
 
 METRICS = [
-    (-6, 80.5, 22.1),
-    (-3, 79.8, 21.6),
-    (0, 79.2, 21.2),
+    (-6, 80.5, 22.1, 7.5, 3),
+    (-3, 79.8, 21.6, 7.0, 2),
+    (0, 79.2, 21.2, 8.5, 1),
 ]
 
 
@@ -121,14 +121,18 @@ def main() -> None:
             db.add(pref)
         pref.goal = "减脂"
         pref.allergies = ["牛奶"]
+        pref.targets = {"weight": 78.0, "squat": 90.0}
 
         db.execute(delete(WorkoutLog).where(WorkoutLog.user_id == user.id))
         db.execute(delete(BodyMetric).where(BodyMetric.user_id == user.id))
         db.execute(delete(DietLog).where(DietLog.user_id == user.id))
         for offset, exercises in WORKOUTS:
             db.add(WorkoutLog(user_id=user.id, date=d(offset), exercises=exercises))
-        for offset, weight, body_fat in METRICS:
-            db.add(BodyMetric(user_id=user.id, date=d(offset), weight=weight, body_fat=body_fat))
+        for offset, weight, body_fat, sleep_hours, soreness in METRICS:
+            db.add(BodyMetric(
+                user_id=user.id, date=d(offset), weight=weight,
+                body_fat=body_fat, sleep_hours=sleep_hours, soreness=soreness,
+            ))
         db.add(DietLog(
             user_id=user.id,
             date=d(0),

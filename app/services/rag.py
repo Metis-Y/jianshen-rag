@@ -90,7 +90,30 @@ def _snapshot(db, user_id: int) -> dict:
     elif len(metrics30) == 1:
         weight_delta = 0
 
+    # 恢复线：近 7 天平均睡眠 + 最近一次酸痛度（M1）
+    since7 = dt.date.today() - dt.timedelta(days=6)
+    sleep_rows = db.scalars(
+        select(BodyMetric).where(
+            BodyMetric.user_id == user_id,
+            BodyMetric.sleep_hours.is_not(None),
+            BodyMetric.date >= since7,
+        )
+    ).all()
+    avg_sleep = (
+        round(sum(m.sleep_hours for m in sleep_rows) / len(sleep_rows), 1)
+        if sleep_rows else None
+    )
+    latest_sore_metric = db.scalar(
+        select(BodyMetric)
+        .where(BodyMetric.user_id == user_id, BodyMetric.soreness.is_not(None))
+        .order_by(BodyMetric.date.desc(), BodyMetric.id.desc())
+        .limit(1)
+    )
+    latest_soreness = latest_sore_metric.soreness if latest_sore_metric else None
+
     pref = db.get(Preference, user_id)
+    targets = (pref.targets or {}) if pref else {}
+
     recent = db.scalars(
         select(WorkoutLog)
         .where(WorkoutLog.user_id == user_id)
@@ -101,6 +124,14 @@ def _snapshot(db, user_id: int) -> dict:
         f"{w.date.month}-{w.date.day}：{_num(exercise_volume(w.exercises))}kg"
         for w in reversed(recent)
     ]
+
+    # 目标进度：深蹲最好成绩（动作名含"深蹲"的最大重量，M2）
+    squat_max: float | None = None
+    for w in db.scalars(select(WorkoutLog).where(WorkoutLog.user_id == user_id)).all():
+        for ex in w.exercises or []:
+            if isinstance(ex, dict) and "深蹲" in str(ex.get("name", "")) and ex.get("weight") is not None:
+                squat_max = max(squat_max or 0.0, float(ex["weight"]))
+
     return {
         "volume30": volume30,
         "recent_sessions": recent_sessions,
@@ -110,6 +141,11 @@ def _snapshot(db, user_id: int) -> dict:
         "has_any_metric": has_any_metric,
         "goal": pref.goal if pref else None,
         "allergies": pref.allergies if pref and pref.allergies else [],
+        "avg_sleep": avg_sleep,
+        "latest_soreness": latest_soreness,
+        "target_weight": targets.get("weight"),
+        "target_squat": targets.get("squat"),
+        "squat_max": squat_max,
     }
 
 
@@ -123,18 +159,39 @@ def _materials_block(chunks: list[dict]) -> str:
 
 
 def _my_data_block(snap: dict) -> str:
-    """【我的数据】块：仅有数据的行才出现（容量/体重变化/目标/忌口）。"""
+    """【我的数据】块：仅有数据的行才出现（容量/体重/恢复/目标进度/忌口）。"""
     lines: list[str] = []
     if snap["has_any_workout"]:
         lines.append(f"近30天训练总容量：{_num(snap['volume30'])}kg")
     if snap.get("recent_sessions"):
         lines.append("近3次训练（日期：容量）：" + "、".join(snap["recent_sessions"]))
+    if snap.get("squat_max") is not None and snap.get("target_squat") is None:
+        lines.append(f"深蹲目前最好成绩：{_num(snap['squat_max'])}kg")
     if snap["latest_weight"] is not None:
         delta = snap["weight_delta"]
         delta_txt = ("+" if delta > 0 else "") + str(delta)
         lines.append(f"最新体重：{snap['latest_weight']}kg（近30天变化 {delta_txt}kg）")
+    if snap.get("avg_sleep") is not None:
+        lines.append(f"近7天平均睡眠：{snap['avg_sleep']}小时")
+    if snap.get("latest_soreness") is not None:
+        lines.append(f"最近记录酸痛度：{snap['latest_soreness']}/5")
     if snap["goal"]:
         lines.append(f"目标：{snap['goal']}")
+    if snap.get("target_weight") is not None and snap["latest_weight"] is not None:
+        diff = abs(round(snap["latest_weight"] - snap["target_weight"], 1))
+        lines.append(
+            f"体重进度：当前 {_num(snap['latest_weight'])}kg / 目标 {_num(snap['target_weight'])}kg"
+            f"（相差 {_num(diff)}kg）"
+        )
+    if snap.get("target_squat") is not None:
+        if snap.get("squat_max") is not None:
+            left = max(0.0, snap["target_squat"] - snap["squat_max"])
+            lines.append(
+                f"深蹲进度：目前 {_num(snap['squat_max'])}kg / 目标 {_num(snap['target_squat'])}kg"
+                f"（还差 {_num(round(left, 1))}kg）"
+            )
+        else:
+            lines.append(f"深蹲目标：{_num(snap['target_squat'])}kg（暂无深蹲记录）")
     if snap["allergies"]:
         lines.append(f"忌口：{'、'.join(snap['allergies'])}")
     return "\n".join(lines)

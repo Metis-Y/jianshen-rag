@@ -51,7 +51,12 @@ def list_metrics(
         stmt = stmt.where(BodyMetric.date <= end)
     stmt = stmt.order_by(BodyMetric.date.asc(), BodyMetric.id.asc())
     series = [
-        {"date": row.date.isoformat(), "weight": row.weight}
+        {
+            "date": row.date.isoformat(),
+            "weight": row.weight,
+            "sleepHours": row.sleep_hours,
+            "soreness": row.soreness,
+        }
         for row in db.scalars(stmt).all()
     ]
     if not series:

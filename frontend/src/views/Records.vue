@@ -103,6 +103,8 @@ async function submitWorkout() {
 // ---------- 体征 ----------
 const metricDate = ref(todayStr())
 const weight = ref(null)
+const sleepHours = ref(null)
+const soreness = ref(null)
 const metricSubmitting = ref(false)
 const metricLoading = ref(false)
 const metricsData = ref(null) // { latest, delta, series }
@@ -136,12 +138,14 @@ async function submitMetric() {
   }
   metricSubmitting.value = true
   try {
-    await api.post('/metrics', {
-      date: metricDate.value,
-      weight: weight.value
-    })
+    const payload = { date: metricDate.value, weight: weight.value }
+    if (sleepHours.value != null) payload.sleepHours = sleepHours.value
+    if (soreness.value != null) payload.soreness = soreness.value
+    await api.post('/metrics', payload)
     ElMessage.success('体征已记录')
     weight.value = null
+    sleepHours.value = null
+    soreness.value = null
     await fetchMetrics()
   } catch (e) {
     // 错误信息已由拦截器统一 alert
@@ -220,6 +224,8 @@ const GOAL_OPTIONS = [
   { label: '维持', value: '维持' }
 ]
 const goal = ref(null)
+const targetWeight = ref(null)
+const targetSquat = ref(null)
 const allergyTags = ref([])
 const allergyInput = ref('')
 const preferenceLoading = ref(false)
@@ -242,6 +248,8 @@ async function fetchPreference() {
   try {
     const data = await api.get('/preference')
     goal.value = (data && data.goal) || null
+    targetWeight.value = (data && data.targetWeight) || null
+    targetSquat.value = (data && data.targetSquat) || null
     allergyTags.value = (data && Array.isArray(data.allergies) && data.allergies) || []
   } catch (e) {
     // 错误信息已由拦截器统一 alert
@@ -256,7 +264,9 @@ async function savePreference() {
     // 整体覆盖：清空场景下 goal=null、allergies=[] 原样提交
     await api.put('/preference', {
       goal: goal.value || null,
-      allergies: allergyTags.value.map((t) => t.trim()).filter(Boolean)
+      allergies: allergyTags.value.map((t) => t.trim()).filter(Boolean),
+      targetWeight: targetWeight.value ?? null,
+      targetSquat: targetSquat.value ?? null
     })
     ElMessage.success('偏好已保存')
     await fetchPreference()
@@ -455,6 +465,32 @@ const recentSeries = computed(() => {
               />
               <span class="unit">kg</span>
             </el-form-item>
+            <el-form-item label="睡眠时长">
+              <el-input-number
+                v-model="sleepHours"
+                :min="0"
+                :max="24"
+                :step="0.5"
+                :precision="1"
+                placeholder="如 7.5"
+                controls-position="right"
+                style="width: 180px"
+              />
+              <span class="unit">小时</span>
+            </el-form-item>
+            <el-form-item label="酸痛度">
+              <el-input-number
+                v-model="soreness"
+                :min="1"
+                :max="5"
+                :step="1"
+                :precision="0"
+                placeholder="1~5"
+                controls-position="right"
+                style="width: 180px"
+              />
+              <span class="unit">/ 5</span>
+            </el-form-item>
             <el-form-item>
               <el-button
                 type="primary"
@@ -484,6 +520,16 @@ const recentSeries = computed(() => {
                 <el-table-column label="体重" width="140">
                   <template #default="{ row }">
                     {{ row.weight != null ? row.weight + ' kg' : '—' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="睡眠" width="90">
+                  <template #default="{ row }">
+                    {{ row.sleepHours != null ? row.sleepHours + ' h' : '—' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="酸痛" width="80">
+                  <template #default="{ row }">
+                    {{ row.soreness != null ? row.soreness + '/5' : '—' }}
                   </template>
                 </el-table-column>
               </el-table>
@@ -580,6 +626,29 @@ const recentSeries = computed(() => {
                     :value="opt.value"
                   />
                 </el-select>
+              </el-form-item>
+              <el-form-item label="目标体重">
+                <el-input-number
+                  v-model="targetWeight"
+                  :min="0"
+                  :step="0.1"
+                  :precision="1"
+                  placeholder="如 78"
+                  controls-position="right"
+                  style="width: 200px"
+                />
+                <span class="unit">kg</span>
+              </el-form-item>
+              <el-form-item label="目标深蹲">
+                <el-input-number
+                  v-model="targetSquat"
+                  :min="0"
+                  :step="2.5"
+                  placeholder="如 100"
+                  controls-position="right"
+                  style="width: 200px"
+                />
+                <span class="unit">kg</span>
               </el-form-item>
               <el-form-item label="长期忌口">
                 <div class="tag-area">

@@ -38,6 +38,7 @@ class Preference(Base):
     user_id: Mapped[int] = mapped_column(primary_key=True)
     goal: Mapped[str | None] = mapped_column(String(32), default=None)   # 减脂/增肌/维持
     allergies: Mapped[list] = mapped_column(JSON, default=list)          # ["牛奶", ...]
+    targets: Mapped[dict] = mapped_column(JSON, default=dict)            # {"weight": 目标体重kg, "squat": 目标深蹲kg}
     updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
 
 
