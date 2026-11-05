@@ -150,15 +150,16 @@ Query：`page, size, category?`
 
 返回：`data: { "latest": { "date": "2026-11-02", "weight": 72.3, "sleepHours": 7.5, "soreness": 3 }, "delta": -0.6, "series": [ { "date": "...", "weight": 72.9, "sleepHours": 7.0, "soreness": 2 }, ... ] }`
 
-### POST /diets —— 记饮食
+### POST /diets —— 记一餐饮食
 
-入参：`{ "date": "2026-11-02", "content": "鸡胸肉+糙米+西兰花", "avoid": ["牛奶"] }`
+入参：`{ "date": "2026-11-02", "meal": "午餐", "content": "鸡胸肉+糙米+西兰花" }`
+（meal 可选：早餐/午餐/晚餐，分餐分别提交；avoid 为历史兼容字段，表单已不再提交——忌口只走偏好长期忌口）
 
 返回：`data: { "id": 3 }`
 
 ### GET /diets?from=&to=
 
-返回：`data: { "records": [ { "id": 3, "date": "...", "content": "...", "avoid": [...] } ] }`
+返回：`data: { "records": [ { "id": 3, "date": "...", "meal": "午餐", "content": "...", "avoid": [...] } ] }`
 
 ## 5. 问答 /chat（SSE）
 
