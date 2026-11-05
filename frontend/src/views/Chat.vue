@@ -393,12 +393,12 @@ onMounted(async () => {
           </div>
 
           <!-- 流式输出中的 assistant 气泡：只在发起提问的会话视图显示 -->
-          <div v-if="streamInView && (streamingText || streamCitations.length)" class="msg-row assistant">
+          <div v-if="streamInView" class="msg-row assistant">
             <div class="bubble">
               <div class="bubble-text bubble-pre">
                 {{ streamingText || '思考中…' }}<span class="cursor">▍</span>
               </div>
-              <div v-if="streamCitations.length" class="citations">
+              <div v-if="streamingText && streamCitations.length" class="citations">
                 <span class="cite-label">引用来源</span>
                 <el-tag
                   v-for="c in streamCitations"
