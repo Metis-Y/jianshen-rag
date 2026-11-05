@@ -100,6 +100,25 @@ async function submitWorkout() {
   }
 }
 
+async function removeWorkout(row) {
+  try {
+    await ElMessageBox.confirm('确定删除这条训练记录吗？', '删除确认', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch (e) {
+    return // 用户取消
+  }
+  try {
+    await api.delete(`/workouts/${row.id}`)
+    ElMessage.success('已删除')
+    await fetchWorkouts()
+  } catch (e) {
+    // 错误信息已由拦截器统一 alert
+  }
+}
+
 // ---------- 体征 ----------
 const metricDate = ref(todayStr())
 const weight = ref(null)
@@ -236,8 +255,7 @@ const GOAL_OPTIONS = [
 ]
 const goal = ref(null)
 const targetWeight = ref(null)
-const targetStrengthName = ref('')
-const targetStrengthValue = ref(null)
+const strengthGoals = ref([{ name: '', value: null }])
 const allergyTags = ref([])
 const allergyInput = ref('')
 const preferenceLoading = ref(false)
@@ -255,14 +273,24 @@ function removeAllergyTag(tag) {
   allergyTags.value = allergyTags.value.filter((t) => t !== tag)
 }
 
+function addStrengthGoal() {
+  strengthGoals.value.push({ name: '', value: null })
+}
+function removeStrengthGoal(index) {
+  if (strengthGoals.value.length <= 1) return
+  strengthGoals.value.splice(index, 1)
+}
+
 async function fetchPreference() {
   preferenceLoading.value = true
   try {
     const data = await api.get('/preference')
     goal.value = (data && data.goal) || null
     targetWeight.value = (data && data.targetWeight) || null
-    targetStrengthName.value = (data && data.targetStrengthName) || ''
-    targetStrengthValue.value = (data && data.targetStrengthValue) || null
+    const goals = (data && Array.isArray(data.strengthGoals) && data.strengthGoals) || []
+    strengthGoals.value = goals.length
+      ? goals.map((g) => ({ name: g.name || '', value: g.value ?? null }))
+      : [{ name: '', value: null }]
     allergyTags.value = (data && Array.isArray(data.allergies) && data.allergies) || []
   } catch (e) {
     // 错误信息已由拦截器统一 alert
@@ -279,12 +307,14 @@ async function savePreference() {
       addAllergyTag()
     }
     // 整体覆盖：清空场景下 goal=null、allergies=[] 原样提交
+    const strengthGoalsPayload = strengthGoals.value
+      .filter((g) => g.name.trim() && g.value != null)
+      .map((g) => ({ name: g.name.trim(), value: g.value }))
     await api.put('/preference', {
       goal: goal.value || null,
       allergies: allergyTags.value.map((t) => t.trim()).filter(Boolean),
       targetWeight: targetWeight.value ?? null,
-      targetStrengthName: targetStrengthName.value.trim() || null,
-      targetStrengthValue: targetStrengthValue.value ?? null
+      strengthGoals: strengthGoalsPayload
     })
     ElMessage.success('偏好已保存')
     await fetchPreference()
@@ -451,6 +481,13 @@ const recentSeries = computed(() => {
               <el-table-column prop="note" label="备注" min-width="160" show-overflow-tooltip>
                 <template #default="{ row }">
                   {{ row.note || '—' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80">
+                <template #default="{ row }">
+                  <el-button link type="danger" size="small" @click="removeWorkout(row)">
+                    删除
+                  </el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -664,21 +701,43 @@ const recentSeries = computed(() => {
                 <span class="unit">kg</span>
               </el-form-item>
               <el-form-item label="力量目标">
-                <div style="display: flex; align-items: center; gap: 8px">
-                  <el-input
-                    v-model="targetStrengthName"
-                    placeholder="动作（如深蹲）"
-                    style="width: 140px"
-                  />
-                  <el-input-number
-                    v-model="targetStrengthValue"
-                    :min="0"
-                    :step="2.5"
-                    placeholder="目标重量"
-                    controls-position="right"
-                    style="width: 140px"
-                  />
-                  <span class="unit">kg</span>
+                <div style="width: 100%">
+                  <div
+                    v-for="(g, i) in strengthGoals"
+                    :key="i"
+                    style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px"
+                  >
+                    <el-input
+                      v-model="g.name"
+                      placeholder="动作（如深蹲）"
+                      style="width: 140px"
+                    />
+                    <el-input-number
+                      v-model="g.value"
+                      :min="0"
+                      :step="2.5"
+                      placeholder="目标重量"
+                      controls-position="right"
+                      style="width: 130px"
+                    />
+                    <span class="unit">kg</span>
+                    <el-button
+                      type="danger"
+                      plain
+                      size="small"
+                      :disabled="strengthGoals.length <= 1"
+                      @click="removeStrengthGoal(i)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
+                  <el-button size="small" @click="addStrengthGoal">
+                    + 添加目标
+                  </el-button>
+                  <p class="hint">
+                    可添加多个力量目标（如深蹲 100、卧推 80）；只填一个动作名等于
+                    圈它的记录，没填重量不参与目标对照。提交按整体覆盖。
+                  </p>
                 </div>
               </el-form-item>
               <el-form-item label="长期忌口">

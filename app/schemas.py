@@ -67,17 +67,23 @@ class DietIn(BaseModel):
     avoid: list[str] | None = None   # 历史兼容字段，前端表单已不提交
 
 
+class StrengthGoalIn(BaseModel):
+    """单条力量目标：动作名（如深蹲、卧推）+ 目标重量 kg。"""
+
+    name: str = Field(min_length=1, max_length=16)
+    value: float = Field(gt=0)
+
+
 class PreferenceIn(BaseModel):
     """PUT 整体覆盖：字段均可选，缺省即清空。
-    目标里程碑：targetWeight 目标体重；targetStrengthName/targetStrengthValue 目标力量（动作自选）。"""
+    目标里程碑：targetWeight 目标体重；strengthGoals 力量目标列表（可多条、可增删）。"""
 
     model_config = ConfigDict(populate_by_name=True)
 
     goal: str | None = Field(default=None, max_length=32)
     allergies: list[str] | None = None
     target_weight: float | None = Field(default=None, gt=0, alias="targetWeight")
-    target_strength_name: str | None = Field(default=None, max_length=16, alias="targetStrengthName")
-    target_strength_value: float | None = Field(default=None, gt=0, alias="targetStrengthValue")
+    strength_goals: list[StrengthGoalIn] | None = Field(default=None, max_length=10, alias="strengthGoals")
 
 
 # ---------- 问答（docs/API.md 第 5、6 节） ----------

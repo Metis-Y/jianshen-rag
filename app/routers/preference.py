@@ -11,22 +11,20 @@ router = APIRouter(prefix="/api/preference", tags=["preference"])
 
 
 def _pref_out(pref: Preference | None) -> dict:
-    """未设置时：goal=null、allergies=[]、目标=null（兼容旧的 squat 格式）。"""
+    """未设置时：goal=null、allergies=[]、目标为空（兼容旧的单目标格式）。"""
     if pref is None:
-        return {
-            "goal": None, "allergies": [],
-            "targetWeight": None, "targetStrengthName": None, "targetStrengthValue": None,
-        }
+        return {"goal": None, "allergies": [], "targetWeight": None, "strengthGoals": []}
     t = pref.targets or {}
-    strength = t.get("strength") or {}
-    name = strength.get("name") or ("深蹲" if t.get("squat") is not None else None)
-    value = strength.get("value") if strength.get("value") is not None else t.get("squat")
+    goals = t.get("strength") or []
+    if isinstance(goals, dict):  # 兼容旧的单个 strength 对象
+        goals = [goals]
+    if not goals and t.get("squat") is not None:  # 兼容更老的 squat 字段
+        goals = [{"name": "深蹲", "value": t.get("squat")}]
     return {
         "goal": pref.goal,
         "allergies": pref.allergies if pref.allergies else [],
         "targetWeight": t.get("weight"),
-        "targetStrengthName": name,
-        "targetStrengthValue": value,
+        "strengthGoals": [{"name": g.get("name"), "value": g.get("value")} for g in goals],
     }
 
 
@@ -50,11 +48,7 @@ def put_pref(
         db.add(pref)
     pref.goal = body.goal
     pref.allergies = body.allergies if body.allergies is not None else []
-    if body.target_strength_value is not None or body.target_strength_name:
-        name = (body.target_strength_name or "深蹲").strip() or "深蹲"
-        strength = {"name": name, "value": body.target_strength_value}
-    else:
-        strength = None
-    pref.targets = {"weight": body.target_weight, "strength": strength}
+    goals = [{"name": g.name.strip(), "value": g.value} for g in (body.strength_goals or [])]
+    pref.targets = {"weight": body.target_weight, "strength": goals}
     db.commit()
     return resp.ok(_pref_out(pref))

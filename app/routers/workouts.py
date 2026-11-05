@@ -92,3 +92,20 @@ def list_workouts(
     records = [_record_out(row) for row in db.scalars(stmt).all()]
     total = _fmt_num(sum(record["volume"] for record in records))
     return resp.ok({"totalVolume": total, "records": records})
+
+
+@router.delete("/{workout_id}")
+def delete_workout(
+    workout_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """删除一条训练记录（仅限本人）。"""
+    row = db.get(WorkoutLog, workout_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="记录不存在")
+    if row.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权操作该记录")
+    db.delete(row)
+    db.commit()
+    return resp.ok()
