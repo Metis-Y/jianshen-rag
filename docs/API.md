@@ -59,13 +59,14 @@
 
 ### GET /preference
 
-返回：`data: { "goal": "减脂", "allergies": ["牛奶"], "targetWeight": 78, "targetSquat": 100 }`
-（未设置时 goal=null、allergies=[]、targetWeight=null、targetSquat=null）
+返回：`data: { "goal": "减脂", "allergies": ["牛奶"], "targetWeight": 78, "targetStrengthName": "深蹲", "targetStrengthValue": 100 }`
+（未设置时 goal=null、allergies=[]、目标字段均为 null）
 
 ### PUT /preference
 
-入参：`{ "goal": "增肌", "allergies": ["花生", "牛奶"], "targetWeight": 80, "targetSquat": 120 }`
-（字段均可选，整体覆盖；targetWeight 目标体重 kg，targetSquat 目标深蹲重量 kg）
+入参：`{ "goal": "增肌", "allergies": ["花生", "牛奶"], "targetWeight": 80, "targetStrengthName": "卧推", "targetStrengthValue": 120 }`
+（字段均可选，整体覆盖；targetWeight 目标体重 kg；targetStrengthName 目标力量动作自选，
+不填默认"深蹲"，targetStrengthValue 对应目标重量 kg）
 
 返回：更新后的完整偏好对象。
 
@@ -160,6 +161,10 @@ Query：`page, size, category?`
 ### GET /diets?from=&to=
 
 返回：`data: { "records": [ { "id": 3, "date": "...", "meal": "午餐", "content": "...", "avoid": [...] } ] }`
+
+### DELETE /diets/{id} —— 删除一条饮食记录
+
+仅限本人（他人记录 403）。返回：`{ "code": 1, "data": null }`。
 
 ## 5. 问答 /chat（SSE）
 
