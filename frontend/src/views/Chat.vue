@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import api from '../api.js'
@@ -8,17 +8,15 @@ const router = useRouter()
 
 // ---- 状态 ----
 const convs = ref([])
-const activeConvId = ref(null)
-const messages = ref([])          // [{id, role, content, citations, feedback, isError}]
+// 会话键 → 消息数组（'new' 表示尚未落库的新对话）：
+// 切会话不依赖服务器重载，进行中的问答在流结束前也能在原会话看到
+const cache = reactive(new Map())
+const activeKey = ref('new')       // 当前显示的会话键：'new' 或会话 id
+const streamKey = ref(null)        // 正在流式的会话键
 const streaming = ref(false)
 const streamingText = ref('')
 const streamCitations = ref([])
 const streamError = ref('')
-
-// 视图切换计数：每次切会话/新对话 +1；流式气泡只属于发起时的那个视图，
-// 切到别的会话后不显示，答完也不追加进无关会话
-const viewSeq = ref(0)
-const streamSeq = ref(-1)
 
 const input = ref('')
 const scope = ref([])             // 限定资料范围（docId 列表）
@@ -28,7 +26,12 @@ const docsTotal = ref(0)          // 用户全部文档数（含非 READY），�
 const chatBody = ref(null)
 
 const noDocs = computed(() => docsTotal.value === 0)
-const streamInView = computed(() => streaming.value && streamSeq.value === viewSeq.value)
+const viewMsgs = computed(() => {
+  if (!cache.has(activeKey.value)) cache.set(activeKey.value, [])
+  return cache.get(activeKey.value)
+})
+// 流式气泡只在"发起提问的那条会话"显示；输入也只在流式之外或别的会话可用
+const streamVisible = computed(() => streaming.value && activeKey.value === streamKey.value)
 
 function mapMessage(m) {
   return {
@@ -56,26 +59,25 @@ async function loadConversations() {
   }
 }
 
-async function loadMessages(convId) {
-  try {
-    const data = await api.get(`/conversations/${convId}/messages`)
-    messages.value = ((data && data.list) || []).map(mapMessage)
+async function openConversation(conv) {
+  activeKey.value = conv.id
+  if (cache.has(conv.id)) {
     scrollToBottom()
+    return
+  }
+  cache.set(conv.id, [])
+  try {
+    const data = await api.get(`/conversations/${conv.id}/messages`)
+    cache.set(conv.id, ((data && data.list) || []).map(mapMessage))
   } catch (e) {
     // 错误信息已由拦截器统一 alert
   }
-}
-
-function openConversation(conv) {
-  activeConvId.value = conv.id
-  viewSeq.value += 1
-  loadMessages(conv.id)
+  scrollToBottom()
 }
 
 function newChat() {
-  activeConvId.value = null
-  messages.value = []
-  viewSeq.value += 1
+  activeKey.value = 'new'
+  if (!cache.has('new')) cache.set('new', [])
 }
 
 async function removeConversation(conv) {
@@ -91,7 +93,8 @@ async function removeConversation(conv) {
   try {
     await api.delete(`/conversations/${conv.id}`)
     ElMessage.success('已删除')
-    if (activeConvId.value === conv.id) {
+    cache.delete(conv.id)
+    if (activeKey.value === conv.id) {
       newChat()
     }
     await loadConversations()
@@ -154,6 +157,7 @@ function streamFieldsReset() {
 }
 
 async function send() {
+  // 单流保护：任何一条会话在生成时，发送键全局禁用（输入框不锁，可在别的会话打字）
   if (streaming.value) return
   const question = input.value.trim()
   if (!question) {
@@ -161,15 +165,18 @@ async function send() {
     return
   }
 
+  const key = activeKey.value
+  const viewArr = viewMsgs.value
+  viewArr.push({ role: 'user', content: question })
+
   input.value = ''
-  messages.value.push({ role: 'user', content: question })
   streamFieldsReset()
   streaming.value = true
-  streamSeq.value = viewSeq.value
+  streamKey.value = key
   scrollToBottom()
 
   const body = { question }
-  if (activeConvId.value) body.conversationId = activeConvId.value
+  if (typeof key === 'number') body.conversationId = key
   if (scope.value.length) body.documentIds = scope.value
 
   let resp
@@ -185,7 +192,7 @@ async function send() {
   } catch (e) {
     ElMessage.error('网络错误，请重试')
     streaming.value = false
-    streamSeq.value = -1
+    streamKey.value = null
     return
   }
 
@@ -203,7 +210,7 @@ async function send() {
       router.replace('/login')
     }
     streaming.value = false
-    streamSeq.value = -1
+    streamKey.value = null
     return
   }
 
@@ -249,23 +256,22 @@ async function send() {
       feedback: null,
       isError: !!streamError.value
     }
-    const sameView = streamSeq.value === viewSeq.value
-    if (doneInfo && doneInfo.conversationId) {
-      if (sameView) {
-        // 流式视图一直打开：就地追加并记录会话
-        activeConvId.value = doneInfo.conversationId
-        messages.value.push(msg)
-      } else if (activeConvId.value === doneInfo.conversationId) {
-        // 切走后又切回该会话：从历史重载补齐
-        await loadMessages(doneInfo.conversationId)
+    // 新对话落库后拿到真实会话 id：把 'new' 缓存迁移到该 id，后续回看仍可见
+    let targetKey = key
+    if (key === 'new' && doneInfo && doneInfo.conversationId) {
+      const arr = cache.get('new') || []
+      cache.delete('new')
+      targetKey = doneInfo.conversationId
+      cache.set(targetKey, arr)
+      if (activeKey.value === 'new') {
+        activeKey.value = targetKey
       }
-    } else if (sameView) {
-      // 未落库（模型失败/未配置）也展示在当前会话
-      messages.value.push(msg)
     }
+    const target = cache.get(targetKey) || (cache.set(targetKey, []), cache.get(targetKey))
+    target.push(msg)
     streamFieldsReset()
     streaming.value = false
-    streamSeq.value = -1
+    streamKey.value = null
     await loadConversations()
     scrollToBottom()
   }
@@ -297,6 +303,7 @@ function scrollToBottom() {
 watch(streamingText, scrollToBottom)
 
 onMounted(async () => {
+  if (!cache.has('new')) cache.set('new', [])
   await Promise.all([loadConversations(), loadScopeOptions()])
 })
 </script>
@@ -313,7 +320,7 @@ onMounted(async () => {
             v-for="conv in convs"
             :key="conv.id"
             class="conv-item"
-            :class="{ active: conv.id === activeConvId }"
+            :class="{ active: conv.id === activeKey }"
             @click="openConversation(conv)"
           >
             <span class="conv-title">{{ conv.title }}</span>
@@ -336,7 +343,7 @@ onMounted(async () => {
       <!-- 右侧：对话主体 -->
       <main class="chat-main">
         <div ref="chatBody" class="chat-body">
-          <div v-if="!messages.length && !streamInView" class="chat-welcome">
+          <div v-if="!viewMsgs.length && !streamVisible" class="chat-welcome">
             <h2>向健身助手提问</h2>
             <p class="hint">
               资料类问题会引用你上传的文档；关于“进步 / 趋势 / 体重”的问题，
@@ -360,7 +367,7 @@ onMounted(async () => {
             </template>
           </el-alert>
 
-          <div v-for="(msg, i) in messages" :key="i" class="msg-row" :class="msg.role">
+          <div v-for="(msg, i) in viewMsgs" :key="i" class="msg-row" :class="msg.role">
             <div class="bubble" :class="{ 'error-bubble': msg.isError }">
               <div v-if="msg.role === 'user'" class="bubble-text">{{ msg.content }}</div>
               <div v-else class="bubble-text bubble-pre">{{ trimLead(msg.content) }}</div>
@@ -397,8 +404,8 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 流式输出中的 assistant 气泡：只在发起提问的会话视图显示 -->
-          <div v-if="streamInView" class="msg-row assistant">
+          <!-- 流式输出中的 assistant 气泡：只在发起提问的那条会话显示 -->
+          <div v-if="streamVisible" class="msg-row assistant">
             <div class="bubble">
               <div class="bubble-text bubble-pre">
                 {{ trimLead(streamingText) || '思考中…' }}<span class="cursor">▍</span>
@@ -429,7 +436,7 @@ onMounted(async () => {
               collapse-tags
               collapse-tags-tooltip
               clearable
-              :disabled="streaming || !scopeOptions.length"
+              :disabled="!scopeOptions.length"
               placeholder="限定资料范围（可选）"
               class="scope-select"
             >
@@ -451,7 +458,6 @@ onMounted(async () => {
               :rows="2"
               resize="none"
               placeholder="输入你的问题，如：深蹲日怎么安排？我最近一周训练进步了吗？"
-              :disabled="streaming"
               @keydown.enter.exact.prevent="send"
               @focus="loadScopeOptions"
             />
@@ -461,7 +467,7 @@ onMounted(async () => {
               :disabled="streaming"
               @click="send"
             >
-              {{ streaming ? '回答中…' : '发送' }}
+              {{ streamVisible ? '回答中…' : streaming ? '其他会话回答中…' : '发送' }}
             </el-button>
           </div>
         </div>
