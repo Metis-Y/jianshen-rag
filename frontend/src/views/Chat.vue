@@ -12,11 +12,9 @@ const convs = ref([])
 // 切会话不依赖服务器重载，进行中的问答在流结束前也能在原会话看到
 const cache = reactive(new Map())
 const activeKey = ref('new')       // 当前显示的会话键：'new' 或会话 id
-const streamKey = ref(null)        // 正在流式的会话键
-const streaming = ref(false)
-const streamingText = ref('')
-const streamCitations = ref([])
-const streamError = ref('')
+// 各会话进行中的流式状态（键 → { active, text, citations, error }）：
+// 每条会话独立一份，互不阻塞，可多会话同时生成
+const streams = reactive(new Map())
 
 const input = ref('')
 const scope = ref([])             // 限定资料范围（docId 列表）
@@ -30,8 +28,9 @@ const viewMsgs = computed(() => {
   if (!cache.has(activeKey.value)) cache.set(activeKey.value, [])
   return cache.get(activeKey.value)
 })
-// 流式气泡只在"发起提问的那条会话"显示；输入也只在流式之外或别的会话可用
-const streamVisible = computed(() => streaming.value && activeKey.value === streamKey.value)
+// 当前会话的进行中流（无则为 null）；流式气泡只在"发起提问的那条会话"显示
+const curStream = computed(() => streams.get(activeKey.value) || null)
+const streamVisible = computed(() => !!curStream.value)
 
 function mapMessage(m) {
   return {
@@ -138,41 +137,34 @@ function parseBlock(block) {
   return { event, data }
 }
 
-function handleSseEvent(event, data) {
+function handleSseEvent(st, event, data) {
   if (event === 'citations') {
-    streamCitations.value = Array.isArray(data) ? data : []
+    st.citations = Array.isArray(data) ? data : []
   } else if (event === 'message') {
     if (data && data.delta) {
-      streamingText.value += data.delta
+      st.text += data.delta
     }
   } else if (event === 'error') {
-    streamError.value = (data && data.message) || '请求失败'
+    st.error = (data && data.message) || '请求失败'
   }
 }
 
-function streamFieldsReset() {
-  streamingText.value = ''
-  streamCitations.value = []
-  streamError.value = ''
-}
-
 async function send() {
-  // 单流保护：任何一条会话在生成时，发送键全局禁用（输入框不锁，可在别的会话打字）
-  if (streaming.value) return
+  // 单流保护只针对"同一会话"：本会话生成中禁止重复发送；其他会话互不影响，可并发问答
+  const key = activeKey.value
+  if (streams.has(key)) return
   const question = input.value.trim()
   if (!question) {
     ElMessage.warning('请输入问题')
     return
   }
 
-  const key = activeKey.value
   const viewArr = viewMsgs.value
   viewArr.push({ role: 'user', content: question })
 
   input.value = ''
-  streamFieldsReset()
-  streaming.value = true
-  streamKey.value = key
+  const st = reactive({ active: true, text: '', citations: [], error: '' })
+  streams.set(key, st)
   scrollToBottom()
 
   const body = { question }
@@ -191,8 +183,7 @@ async function send() {
     })
   } catch (e) {
     ElMessage.error('网络错误，请重试')
-    streaming.value = false
-    streamKey.value = null
+    streams.delete(key)
     return
   }
 
@@ -209,8 +200,7 @@ async function send() {
       localStorage.removeItem('token')
       router.replace('/login')
     }
-    streaming.value = false
-    streamKey.value = null
+    streams.delete(key)
     return
   }
 
@@ -232,7 +222,7 @@ async function send() {
           if (event === 'done') {
             doneInfo = data
           } else {
-            handleSseEvent(event, data)
+            handleSseEvent(st, event, data)
           }
         }
       }
@@ -242,19 +232,19 @@ async function send() {
       if (event === 'done') {
         doneInfo = data
       } else {
-        handleSseEvent(event, data)
+        handleSseEvent(st, event, data)
       }
     }
   } catch (e) {
-    streamError.value = '连接中断，请重试'
+    st.error = '连接中断，请重试'
   } finally {
     const msg = {
       id: doneInfo ? doneInfo.messageId : null,
       role: 'assistant',
-      content: streamingText.value || streamError.value || '（无回复内容）',
-      citations: streamCitations.value,
+      content: st.text || st.error || '（无回复内容）',
+      citations: st.citations,
       feedback: null,
-      isError: !!streamError.value
+      isError: !!st.error
     }
     // 新对话落库后拿到真实会话 id：把 'new' 缓存迁移到该 id，后续回看仍可见
     let targetKey = key
@@ -269,9 +259,7 @@ async function send() {
     }
     const target = cache.get(targetKey) || (cache.set(targetKey, []), cache.get(targetKey))
     target.push(msg)
-    streamFieldsReset()
-    streaming.value = false
-    streamKey.value = null
+    streams.delete(key)
     await loadConversations()
     scrollToBottom()
   }
@@ -300,7 +288,7 @@ function scrollToBottom() {
   })
 }
 
-watch(streamingText, scrollToBottom)
+watch(() => curStream.value?.text, scrollToBottom)
 
 onMounted(async () => {
   if (!cache.has('new')) cache.set('new', [])
@@ -408,12 +396,12 @@ onMounted(async () => {
           <div v-if="streamVisible" class="msg-row assistant">
             <div class="bubble">
               <div class="bubble-text bubble-pre">
-                {{ trimLead(streamingText) || '思考中…' }}<span class="cursor">▍</span>
+                {{ trimLead(curStream.text) || '思考中…' }}<span class="cursor">▍</span>
               </div>
-              <div v-if="streamingText && streamCitations.length" class="citations">
+              <div v-if="curStream.text && curStream.citations.length" class="citations">
                 <span class="cite-label">引用来源</span>
                 <el-tag
-                  v-for="c in streamCitations"
+                  v-for="c in curStream.citations"
                   :key="c.idx"
                   size="small"
                   type="info"
@@ -464,10 +452,10 @@ onMounted(async () => {
             <el-button
               type="primary"
               class="send-btn"
-              :disabled="streaming"
+              :disabled="streamVisible"
               @click="send"
             >
-              {{ streamVisible ? '回答中…' : streaming ? '其他会话回答中…' : '发送' }}
+              {{ streamVisible ? '回答中…' : '发送' }}
             </el-button>
           </div>
         </div>
@@ -710,7 +698,8 @@ onMounted(async () => {
 
 .send-btn {
   height: 54px;
-  width: 96px;
+  min-width: 96px;
+  padding: 0 14px;
 }
 
 .hint {
