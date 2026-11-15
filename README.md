@@ -26,7 +26,7 @@
 | --- | --- |
 | 后端 | Python 3.11 · FastAPI · SQLAlchemy 2 · SQLite |
 | 检索 | ChromaDB（本地持久化，元数据过滤）+ LangChain（文档解析/切分） |
-| 模型 | OpenAI 兼容 API（硅基流动：bge-m3 Embedding + 对话模型按配置可换） |
+| 模型 | OpenAI 兼容 API（硅基流动：bge-m3 Embedding / bge-reranker-v2-m3 重排 / 对话模型按配置可换） |
 | 认证 | PyJWT + bcrypt |
 | 前端 | Vue 3 · Vite · Element Plus · Axios，nginx 反向代理（可选，已配 SSE buffering off） |
 
@@ -81,16 +81,17 @@ python scripts/seed_demo.py
 
 ## 配置项（环境变量）
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| SILICONFLOW_API_KEY | 必填 | 大模型平台 API Key（embedding 与 chat 未单独配置时共用） |
-| EMBEDDING_BASE_URL / EMBEDDING_MODEL | https://api.siliconflow.cn/v1 / BAAI/bge-m3 | 向量模型 |
-| CHAT_BASE_URL / CHAT_MODEL | https://api.siliconflow.cn/v1 / deepseek-ai/DeepSeek-V3 | 对话模型（可按平台替换） |
-| JWT_SECRET / JWT_TTL_HOURS | dev-secret-change-me / 72 | 生产必须改密钥 |
-| CHUNK_SIZE / CHUNK_OVERLAP / TOPK | 500 / 80 / 5 | 切分与检索参数 |
-| RERANK_BASE_URL / RERANK_MODEL | https://api.siliconflow.cn/v1 / BAAI/bge-reranker-v2-m3 | 检索精排模型（API Key 缺省复用 SILICONFLOW_API_KEY，设为空则走纯向量粗排） |
-| MAX_UPLOAD_MB | 20 | 上传大小上限 |
-| DATA_DIR / SQLITE_PATH / UPLOAD_DIR / CHROMA_DB_PATH | ./data 等 | 数据目录（数据库/附件/向量库） |
+| 变量                                                   | 默认值                                                     | 说明                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------- |
+| SILICONFLOW_API_KEY                                  | 必填                                                      | 大模型平台 API Key（embedding 与 chat 未单独配置时共用）            |
+| EMBEDDING_BASE_URL / EMBEDDING_MODEL                 | https://api.siliconflow.cn/v1 / BAAI/bge-m3             | 向量模型                                                |
+| CHAT_BASE_URL / CHAT_MODEL                           | https://api.siliconflow.cn/v1 / deepseek-ai/DeepSeek-V3  | 对话模型（可按平台替换）                                        |
+| CHAT_THINKING                                        | 空（不传该参数）                                            | 思考开关：推理系模型如小米 MiMo v2.6 设 `enabled`/`disabled`（MiMo 默认思考；思考模式下 temperature 被忽略），留空走服务端默认 |
+| JWT_SECRET / JWT_TTL_HOURS                           | dev-secret-change-me / 72                               | 生产必须改密钥                                             |
+| CHUNK_SIZE / CHUNK_OVERLAP / TOPK                    | 500 / 80 / 5                                            | 切分与检索参数                                             |
+| RERANK_BASE_URL / RERANK_MODEL                       | https://api.siliconflow.cn/v1 / BAAI/bge-reranker-v2-m3 | 检索精排模型（API Key 缺省复用 SILICONFLOW_API_KEY，设为空则走纯向量粗排） |
+| MAX_UPLOAD_MB                                        | 20                                                      | 上传大小上限                                              |
+| DATA_DIR / SQLITE_PATH / UPLOAD_DIR / CHROMA_DB_PATH | ./data 等                                                | 数据目录（数据库/附件/向量库）                                    |
 
 ## 目录结构
 
@@ -115,5 +116,6 @@ python scripts/seed_demo.py
 ├── samples/               # 个人示例语料 + public/ 公共知识库语料
 ├── docs/API.md            # 接口契约
 ├── docs/CORPUS_SOURCES.md # 公共语料依据与写作约定
+├── docs/EVALUATION.md     # 评估手册（检索评估跑法/指标/加题纪律）
 └── requirements.txt
 ```

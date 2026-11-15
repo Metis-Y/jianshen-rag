@@ -17,8 +17,8 @@
 | 40301 | 无权限（访问他人资源） |
 | 40401 | 资源不存在 |
 | 41301 | 文件超过大小上限（20MB） |
-| 50060 | 文档解析失败后重试仍失败 |
-| 50202 | 模型 API 不可用（流未开始时返回；流已开始走 SSE error 事件） |
+| 50060 | 预留（解析失败走上传响应的 status=FAILED 字段，HTTP 仍 200） |
+| 50202 | 上游模型服务异常（全局映射预留；问答链路实际上游失败走 SSE error 帧，见第 5 节） |
 | 50000 | 系统错误 |
 
 - **分页**：`?page=1&size=10` → `data: { total, page, size, list: [...] }`
@@ -78,16 +78,18 @@ Content-Type: `multipart/form-data`
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| file | 是 | PDF/Word/MD，≤20MB |
+| file | 是 | PDF / Word / MD / TXT，≤20MB；扩展名白名单 + 文件头/编码校验 |
 | category | 否 | `plan` / `diet` / `other` |
+
+校验失败（扩展名不在白名单、文件头与扩展名不符、文本非 UTF-8）→ 40010，message 指明原因。
 
 返回（三个分支）：
 
 ```json
 // 成功：
-{ "data": { "docId": 7, "filename": "腿部计划.pdf", "status": "READY", "chunkCount": 24, "dedup": false } }
+{ "data": { "docId": 7, "filename": "腿部计划.pdf", "status": "READY", "chunkCount": 24, "dedup": false, "failReason": null } }
 // 秒传（同用户同 MD5 且 READY）：
-{ "data": { "docId": 3, "filename": "腿部计划.pdf", "status": "READY", "chunkCount": 24, "dedup": true } }
+{ "data": { "docId": 3, "filename": "腿部计划.pdf", "status": "READY", "chunkCount": 24, "dedup": true, "failReason": null } }
 // 解析失败：
 { "data": { "docId": 8, "filename": "x.pdf", "status": "FAILED", "failReason": "无法提取文本（疑似扫描件）" } }
 ```
@@ -100,7 +102,7 @@ Query：`page, size, category?`
 
 ### GET /documents/{id} —— 详情
 
-返回：单条同上 + `failReason`。
+返回：与列表项同字段（含 failReason）。
 
 ### POST /documents/{id}/retry —— 失败重试
 
@@ -181,7 +183,7 @@ Query：`page, size, category?`
 ```
 
 - `conversationId` 可选：不传新建会话，响应 done 事件里回传
-- `documentIds` 可选：限定检索范围；不传全库（自己的文档）
+- `documentIds` 可选：限定检索范围；不传则检索本人文档 + 公共知识库
 
 响应 `text/event-stream`，事件序列：
 
@@ -206,15 +208,15 @@ data: {"conversationId":2,"messageId":9}
 | done | 结束 | `{conversationId, messageId}` |
 | error | 上游失败 | `{message}` |
 
-后端每次提问都**先聚合 SQLite 真实数据**（容量/体重/睡眠/酸痛/目标进度）作为【我的数据】块、
-再检索 topK 文档块作为【资料】块拼进 Prompt；用哪个来源、以及"记录不足/没有相关内容"等
+后端每次提问都**先检索 topK 文档块**、再聚合 SQLite 真实数据（容量/体重/睡眠/酸痛/目标进度/近期饮食），
+分别作为【资料】块与【我的数据】块拼进 Prompt；用哪个来源、以及"记录不足/没有相关内容"等
 退化话术，均由模型按系统提示词自行判断，禁止编造。
 
 ## 6. 会话与反馈
 
 | 方法 | 路径 | 入参 | 返回 |
 | --- | --- | --- | --- |
-| GET | /conversations?page=&size= | — | `{total, list:[{id,title,createdAt}]}` |
+| GET | /conversations?page=&size= | — | `{total, page, size, list:[{id,title,createdAt}]}` |
 | GET | /conversations/{id}/messages | — | `{list:[{id,role,content,citations,feedback,createdAt}]}`（feedback 为当前用户的反馈：true/false，未反馈 null） |
 | DELETE | /conversations/{id} | — | `{ "code": 1, "data": null }` |
 | POST | /messages/{id}/feedback | `{ "positive": true }`（true 有帮助 / false 没帮助 / null 取消） | `{ "code": 1, "data": null }` |
