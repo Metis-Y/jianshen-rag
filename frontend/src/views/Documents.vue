@@ -133,6 +133,37 @@ async function remove(doc) {
   }
 }
 
+// ---------- 详情 ----------
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detail = ref(null)
+
+// 字节转可读大小
+function fmtSize(bytes) {
+  if (bytes == null) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`
+}
+
+// createdAt 为 ISO 字符串，展示成 YYYY-MM-DD HH:mm:ss
+function fmtTime(iso) {
+  return iso ? iso.replace('T', ' ').slice(0, 19) : '—'
+}
+
+async function showDetail(doc) {
+  detailVisible.value = true
+  detailLoading.value = true
+  detail.value = null
+  try {
+    detail.value = await api.get(`/documents/${doc.docId}`)
+  } catch (e) {
+    detailVisible.value = false // 拉取失败已由拦截器统一 alert，弹窗随之关闭
+  } finally {
+    detailLoading.value = false
+  }
+}
+
 onMounted(fetchList)
 </script>
 
@@ -215,8 +246,11 @@ onMounted(fetchList)
             <span v-else>—</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120">
+        <el-table-column label="操作" width="170">
           <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="showDetail(row)">
+              详情
+            </el-button>
             <el-button
               v-if="row.status === 'FAILED'"
               link
@@ -244,6 +278,39 @@ onMounted(fetchList)
         @current-change="handlePageChange"
       />
     </el-card>
+
+    <el-dialog v-model="detailVisible" title="文档详情" width="480px">
+      <div v-loading="detailLoading" style="min-height: 80px">
+        <el-descriptions v-if="detail" :column="1" border>
+          <el-descriptions-item label="文件名">
+            {{ detail.filename }}
+          </el-descriptions-item>
+          <el-descriptions-item label="分类">
+            {{ categoryMap[detail.category] || '未分类' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="statusTagType(detail.status)">
+              {{ statusMap[detail.status] || detail.status }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="分块数">
+            {{ detail.chunkCount != null ? detail.chunkCount : '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="文件大小">
+            {{ fmtSize(detail.sizeBytes) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="上传时间">
+            {{ fmtTime(detail.createdAt) }}
+          </el-descriptions-item>
+          <el-descriptions-item
+            v-if="detail.status === 'FAILED' && detail.failReason"
+            label="失败原因"
+          >
+            {{ detail.failReason }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-dialog>
   </div>
 </template>
 

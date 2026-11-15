@@ -8,6 +8,13 @@ const router = useRouter()
 
 // ---- 状态 ----
 const convs = ref([])
+// 会话列表分页：滚动到底部自动追加下一页（后端按 id 倒序，向下滚 = 翻更早的会话）
+const CONV_PAGE_SIZE = 50
+const convsPage = ref(1)
+const convsTotal = ref(0)
+const convsLoading = ref(false)
+const convList = ref(null)
+const hasMoreConvs = computed(() => convs.value.length < convsTotal.value)
 // 会话键 → 消息数组（'new' 表示尚未落库的新对话）：
 // 切会话不依赖服务器重载，进行中的问答在流结束前也能在原会话看到
 const cache = reactive(new Map())
@@ -49,12 +56,34 @@ function trimLead(s) {
 }
 
 // ---- 会话 ----
-async function loadConversations() {
+// reset 默认从第 1 页整体刷新；传 false 则追加下一页。
+// 追加并发时以页码守卫去重：目标页不再是"当前页+1"说明已有更新的刷新落地，丢弃本次结果
+async function loadConversations(reset = true) {
+  const targetPage = reset ? 1 : convsPage.value + 1
+  convsLoading.value = true
   try {
-    const data = await api.get('/conversations', { params: { page: 1, size: 50 } })
-    convs.value = (data && data.list) || []
+    const data = await api.get('/conversations', {
+      params: { page: targetPage, size: CONV_PAGE_SIZE }
+    })
+    const rows = (data && data.list) || []
+    if (reset || targetPage === convsPage.value + 1) {
+      convs.value = reset ? rows : convs.value.concat(rows)
+      convsPage.value = targetPage
+      convsTotal.value = (data && data.total) || 0
+    }
   } catch (e) {
     // 错误信息已由拦截器统一 alert
+  } finally {
+    convsLoading.value = false
+  }
+}
+
+// 滚动到底部（留 40px 余量）且还有更多时，追加下一页
+function onConvScroll() {
+  const el = convList.value
+  if (!el || convsLoading.value || !hasMoreConvs.value) return
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) {
+    loadConversations(false)
   }
 }
 
@@ -302,7 +331,7 @@ onMounted(async () => {
       <!-- 左侧：历史会话（可滚动） + 底部固定新对话入口 -->
       <aside class="conv-side">
         <div class="conv-header">历史对话</div>
-        <div class="conv-list">
+        <div ref="convList" class="conv-list" @scroll="onConvScroll">
           <div v-if="!convs.length" class="conv-empty">暂无历史会话</div>
           <div
             v-for="conv in convs"
@@ -322,6 +351,7 @@ onMounted(async () => {
               删除
             </el-button>
           </div>
+          <div v-if="convsLoading && convs.length" class="conv-more">加载中…</div>
         </div>
         <el-button type="primary" class="new-chat-btn" @click="newChat">
           开启新对话
@@ -510,6 +540,13 @@ onMounted(async () => {
   font-size: 13px;
   text-align: center;
   margin-top: 24px;
+}
+
+.conv-more {
+  color: #9ca3af;
+  font-size: 12px;
+  text-align: center;
+  padding: 8px 0;
 }
 
 .conv-item {
