@@ -38,6 +38,13 @@ def summarize(db: Session, user_id: int) -> dict:
     latest_sore = records.latest_soreness_metric(db, user_id)
     latest_soreness = latest_sore.soreness if latest_sore else None
 
+    diets7 = records.diet_rows(db, user_id, start=since7)
+    recent_diets = (
+        [f"{d.date.month}-{d.date.day} {d.meal or '饮食'}：{d.content}" for d in reversed(diets7)]
+        or None
+    )
+    has_any_diet = records.any_diet(db, user_id)
+
     pref = users.get_preference(db, user_id)
     targets = (pref.targets or {}) if pref else {}
 
@@ -65,8 +72,8 @@ def summarize(db: Session, user_id: int) -> dict:
             for ex in w.exercises or []:
                 if (
                     isinstance(ex, dict)
-                    and name in str(ex.get("name", ""))
                     and ex.get("weight") is not None
+                    and records.same_exercise(name, ex.get("name"))
                 ):
                     mx = max(mx or 0.0, float(ex["weight"]))
         goal_progress.append({"name": name, "value": value, "max": mx})
@@ -82,6 +89,8 @@ def summarize(db: Session, user_id: int) -> dict:
         "allergies": pref.allergies if pref and pref.allergies else [],
         "avg_sleep": avg_sleep,
         "latest_soreness": latest_soreness,
+        "recent_diets": recent_diets,
+        "has_any_diet": has_any_diet,
         "target_weight": targets.get("weight"),
         "goal_progress": goal_progress,
     }

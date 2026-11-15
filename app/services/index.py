@@ -21,15 +21,19 @@ _EMBED_BATCH = 32          # embedding 请求批量上限兜底（硅基流动�
 _META_TEXT_MAX = 200       # 元数据文本截断，避免超长文件名/来源撑爆 Chroma 元数据
 _COARSE_FACTOR = 4         # 粗召回候选 = top_k × 4（不低于 16），进入 rerank 精排
 
+# 本地持久化向量库客户端：数据以目录形式落盘在 CHROMA_DB_PATH，重启后自动恢复
+# Settings(anonymized_telemetry=False)：关闭 Chroma 的匿名使用统计上报
 _client = chromadb.PersistentClient(
     path=config.CHROMA_DB_PATH,
     settings=Settings(anonymized_telemetry=False),
 )
+# 启动时确保集合存在：不存在则按默认 HNSW 参数创建，存在则直接复用
 _collection = _client.get_or_create_collection(
     name=_COLLECTION_NAME,
     embedding_function=None,  # 向量外部生成，禁用内置 download-on-demand 模型
 )
 
+# embedding 客户端懒加载单例：首次真正调用时才创建，缺密钥也不会在导入期失败
 _embed_client: OpenAI | None = None
 
 
@@ -49,8 +53,10 @@ def _embed(texts: list[str]) -> list[list[float]]:
         raise RuntimeError("EMBEDDING_API_KEY 未配置")
     client = _embed_client_get()
     vectors: list[list[float]] = []
+    # 分批循环：单次请求的 input 条数有平台上限，按 _EMBED_BATCH 切片逐批向量化
     for i in range(0, len(texts), _EMBED_BATCH):
         batch = texts[i : i + _EMBED_BATCH]
+        # embeddings.create：OpenAI 兼容的批量向量化接口，返回顺序与 input 对齐
         resp = client.embeddings.create(model=config.EMBEDDING_MODEL, input=batch)
         vectors.extend(item.embedding for item in resp.data)
     return vectors
@@ -89,8 +95,10 @@ def index_document(
     if not chunks:
         return
     texts = [str(c["text"]) for c in chunks]
+    # 先把全部碎片向量化（_embed 内部分批），再整体写入，减少 Chroma 写事务次数
     vectors = _embed(texts)
     # 先删后加可保证同名 id 幂等；上传是新 doc_id，重试前已显式 remove，此处等价防重
+    # collection.add：ids/embeddings/documents/metadatas 四个列表按下标一一对应
     _collection.add(
         ids=[f"{doc_id}:{c['seq']}" for c in chunks],
         embeddings=vectors,
@@ -104,6 +112,7 @@ def index_document(
 
 def remove_document(doc_id: int) -> None:
     """删除某文档的全部向量（where doc_id 匹配）。"""
+    # collection.delete + where：按 metadata 精确匹配批量删除，一次清掉该文档所有切片
     _collection.delete(where={"doc_id": int(doc_id)})
 
 
@@ -120,11 +129,13 @@ def _rerank(question: str, hits: list[dict]) -> list[dict]:
             "documents": [h["text"] for h in hits],
         }
     ).encode("utf-8")
+    # urllib.request.Request：手工组装 HTTP POST（body 为 JSON 字节串），避免引入额外 HTTP 依赖
     req = urllib.request.Request(
         config.RERANK_BASE_URL.rstrip("/") + "/rerank", data=body, method="POST"
     )
     req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {config.RERANK_API_KEY}")
+    # urlopen：发起请求并读取响应体；timeout=30 防止 rerank 服务无响应拖垮问答
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     ordered = [hits[r["index"]] for r in data.get("results", [])]
@@ -146,6 +157,7 @@ def retrieve(
     """
     # 可见集合：本人文档 + 公共知识库文档
     base: dict = {
+        # where 语义：$or 满足其一即可（本人文档 或 公共文档）
         "$or": [
             {"owner_id": int(owner_id)},
             {"is_public": True},
@@ -153,6 +165,7 @@ def retrieve(
     }
     if document_ids:  # 非空列表 → 可见集合内再限定文档白名单
         where: dict = {
+            # $and 表示全部条件同时成立；$in 表示 doc_id 命中白名单之一
             "$and": [
                 base,
                 {"doc_id": {"$in": [int(i) for i in document_ids]}},
@@ -164,6 +177,7 @@ def retrieve(
     # 向量化 question（embedding 维度直接透传，无特殊处理）
     query_vec = _embed([question])[0]
     recall_k = max(int(top_k) * _COARSE_FACTOR, 16)
+    # collection.query：向量近邻检索，n_results 为召回条数；where 先按 metadata 过滤再比距离
     result = _collection.query(
         query_embeddings=[query_vec],
         n_results=recall_k,
@@ -207,6 +221,7 @@ def _diversify(hits: list[dict], top_k: int) -> list[dict]:
     leftovers: list[dict] = []
     for hit in hits:
         key = hit.get("doc_id")
+        # 该文档已有一片入选：本片暂存 leftovers，等遍历完再决定是否补位
         if key in seen_docs:
             leftovers.append(hit)
             continue
@@ -214,5 +229,6 @@ def _diversify(hits: list[dict], top_k: int) -> list[dict]:
         picked.append(hit)
         if len(picked) >= top_k:
             return picked[:top_k]
+    # 候选文档数不足 top_k：用同文档的其他切片补齐（限定单文档提问时即此情况）
     picked.extend(leftovers[: top_k - len(picked)])
     return picked[:top_k]

@@ -38,7 +38,7 @@ class Preference(Base):
     user_id: Mapped[int] = mapped_column(primary_key=True)
     goal: Mapped[str | None] = mapped_column(String(32), default=None)   # 减脂/增肌/维持
     allergies: Mapped[list] = mapped_column(JSON, default=list)          # ["牛奶", ...]
-    targets: Mapped[dict] = mapped_column(JSON, default=dict)            # {"weight": 目标体重kg, "squat": 目标深蹲kg}
+    targets: Mapped[dict] = mapped_column(JSON, default=dict)            # {"weight": 目标体重kg, "strength": [{"name","value"}]}（力量目标可多条）
     updated_at: Mapped[datetime] = mapped_column(default=datetime.now, onupdate=datetime.now)
 
 
@@ -75,7 +75,7 @@ class WorkoutLog(Base):
 
 
 class BodyMetric(Base):
-    """体重/体脂等体征记录（body_fat/sleep_hours/soreness 预留，一期不参与统计）。"""
+    """体重/体脂等体征记录（body_fat 预留；sleep_hours/soreness 已启用，恢复线问答用）。"""
 
     __tablename__ = "body_metric"
 
@@ -84,8 +84,8 @@ class BodyMetric(Base):
     date: Mapped[dt.date] = mapped_column(index=True)
     weight: Mapped[float | None] = mapped_column(default=None)
     body_fat: Mapped[float | None] = mapped_column(default=None)   # 预留
-    sleep_hours: Mapped[float | None] = mapped_column(default=None)  # 预留（二期恢复线）
-    soreness: Mapped[int | None] = mapped_column(default=None)      # 预留：1~5 酸痛度
+    sleep_hours: Mapped[float | None] = mapped_column(default=None)  # 睡眠时长（M1 启用，恢复线问答）
+    soreness: Mapped[int | None] = mapped_column(default=None)      # 1~5 酸痛度（M1 启用，恢复线问答）
     created_at: Mapped[datetime] = mapped_column(default=datetime.now)
 
 

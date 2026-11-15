@@ -49,7 +49,7 @@ class WorkoutIn(BaseModel):
 
 
 class MetricIn(BaseModel):
-    """bodyFat/sleepHours/soreness 预留，一期可不传。"""
+    """bodyFat 预留；sleepHours/soreness 已启用（恢复线问答），均可不传。"""
 
     model_config = ConfigDict(populate_by_name=True)
 

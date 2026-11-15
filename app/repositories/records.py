@@ -18,6 +18,24 @@ def exercise_volume(exercises: list) -> float:
     return total
 
 
+# 动作名对齐：目标动作与记录动作默认"完全相等"才算同一动作。
+# 不再用"名字包含"猜（会误算，"深蹲"会命中"保加利亚深蹲"并取错重量）。
+# 如需把常见写法视作同一动作，在 _EXERCISE_ALIASES 逐条登记（宁缺毋滥：
+# 错登一条 = 又引入一次误匹配）。表为空即纯精确匹配。
+_EXERCISE_ALIASES: dict[str, str] = {}
+
+
+def normalize_exercise(name: str | None) -> str:
+    """动作名归一：去首尾空白，再查别名表（表为空则等价纯精确匹配）。"""
+    n = (name or "").strip()
+    return _EXERCISE_ALIASES.get(n, n)
+
+
+def same_exercise(a: str | None, b: str | None) -> bool:
+    """两个动作名是否同一动作：归一后完全相等才算，宁可漏报、不误报。"""
+    return normalize_exercise(a) == normalize_exercise(b)
+
+
 def workout_rows(
     db: Session, user_id: int, start: date | None = None, end: date | None = None
 ) -> list[WorkoutLog]:
@@ -76,6 +94,10 @@ def any_metric(db: Session, user_id: int) -> bool:
         )
         is not None
     )
+
+
+def any_diet(db: Session, user_id: int) -> bool:
+    return db.scalar(select(DietLog.id).where(DietLog.user_id == user_id).limit(1)) is not None
 
 
 def sleep_rows_since(db: Session, user_id: int, since: date) -> list[BodyMetric]:
