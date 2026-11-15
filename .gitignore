@@ -17,3 +17,7 @@ data/uploads/
 .env
 # 运行时数据
 /data/
+# 内部设计文档（本地保留，不入版本控制）
+/design/
+# 评估结果（运行产物，不入版本控制）
+/results/

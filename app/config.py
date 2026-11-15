@@ -20,6 +20,9 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3")
 CHAT_API_KEY = os.getenv("CHAT_API_KEY", SILICONFLOW_API_KEY)
 CHAT_BASE_URL = os.getenv("CHAT_BASE_URL", "https://api.siliconflow.cn/v1")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "deepseek-ai/DeepSeek-V3")
+# 思考开关（推理系模型如小米 MiMo v2.6 系列：enabled/disabled，服务端默认思考）
+# 留空 = 不传该参数、走服务端默认；注意 MiMo 思考模式下 temperature 会被忽略
+CHAT_THINKING = os.getenv("CHAT_THINKING", "").strip()
 
 # 重排：粗召回候选后用 rerank 模型精排（key 缺省复用 SILICONFLOW_API_KEY）
 RERANK_API_KEY = os.getenv("RERANK_API_KEY", SILICONFLOW_API_KEY)
