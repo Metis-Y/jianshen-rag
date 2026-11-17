@@ -119,6 +119,15 @@ async function removeWorkout(row) {
   }
 }
 
+// 动作明细文案：快速记录只存动作名，缺省字段不展示（如"深蹲 80kg×5组×5次"）
+function fmtExercise(ex) {
+  const parts = []
+  if (ex.weight != null) parts.push(`${ex.weight}kg`)
+  if (ex.sets != null) parts.push(`${ex.sets}组`)
+  if (ex.reps != null) parts.push(`${ex.reps}次`)
+  return parts.length ? `${ex.name} ${parts.join('×')}` : ex.name
+}
+
 // ---------- 体征 ----------
 const metricDate = ref(todayStr())
 const weight = ref(null)
@@ -467,6 +476,19 @@ const recentSeries = computed(() => {
               </span>
             </div>
             <el-table :data="workoutRecords" empty-text="暂无训练记录">
+              <el-table-column type="expand">
+                <template #default="{ row }">
+                  <div class="exercise-detail">
+                    <div
+                      v-for="(ex, i) in row.exercises || []"
+                      :key="i"
+                      class="exercise-detail-line"
+                    >
+                      {{ fmtExercise(ex) }}
+                    </div>
+                  </div>
+                </template>
+              </el-table-column>
               <el-table-column prop="date" label="日期" width="120" />
               <el-table-column label="容量" width="130">
                 <template #default="{ row }">
@@ -854,6 +876,16 @@ h2 {
 .sub-list {
   margin-top: 16px;
   min-height: 40px;
+}
+
+.exercise-detail {
+  padding: 2px 0 2px 8px;
+}
+
+.exercise-detail-line {
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.8;
 }
 
 .sub-title {
