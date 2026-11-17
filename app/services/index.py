@@ -43,6 +43,7 @@ def _embed_client_get() -> OpenAI:
         _embed_client = OpenAI(
             api_key=config.EMBEDDING_API_KEY,
             base_url=config.EMBEDDING_BASE_URL,
+            timeout=config.EMBEDDING_TIMEOUT,
         )
     return _embed_client
 
