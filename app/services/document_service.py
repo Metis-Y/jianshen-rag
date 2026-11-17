@@ -5,10 +5,11 @@ import os
 import shutil
 
 from fastapi import HTTPException, UploadFile
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import config
-from app.db import Document, User
+from app.db import Document, SessionLocal, User
 from app.repositories import documents as documents_repo
 from app.services import index, pipeline
 
@@ -224,17 +225,38 @@ def retry_document(db: Session, user: User, doc_id: int) -> dict:
     return _upload_out(doc, dedup=False)
 
 
-def delete_document(db: Session, user: User, doc_id: int) -> None:
-    doc = _get_owned(db, user.id, doc_id)
-    path = os.path.join(config.UPLOAD_DIR, f"user_{user.id}", f"{doc.file_md5}_{doc.filename}")
+def _purge_artifacts(doc: Document) -> None:
+    """物理清理一份文档：磁盘原件 + 切片 JSON + Chroma 向量（三步幂等，删不存在不报错）。"""
+    path = os.path.join(config.UPLOAD_DIR, f"user_{doc.user_id}", f"{doc.file_md5}_{doc.filename}")
     try:
-        # os.remove：先删磁盘源文件；文件可能已被清理，忽略 FileNotFoundError 保证幂等
         os.remove(path)
     except FileNotFoundError:
         pass
     pipeline.remove_chunks(doc.id)
-    # 三处同步：磁盘文件 + Chroma 向量（where doc_id）已删，业务记录最后删
     index.remove_document(doc.id)
-    # 记录最后删：万一中途失败，还能凭记录找到残留的向量/文件做补偿
+
+
+def delete_document(db: Session, user: User, doc_id: int) -> None:
+    doc = _get_owned(db, user.id, doc_id)
+    # 1) 先软标记 DELETED：立刻从列表消失，物理清理失败也留痕
+    doc.status = "DELETED"
+    db.commit()
+    # 2) 物理清理（幂等，中途失败可重来）
+    _purge_artifacts(doc)
+    # 3) 记录最后删：残留 DELETED 记录由启动扫描兜底补删，最终一致
     db.delete(doc)
     db.commit()
+
+
+def sweep_deleted() -> int:
+    """启动兜底：清理所有 DELETED 残留（物理清理 + 删记录），返回清理条数。"""
+    db = SessionLocal()
+    try:
+        docs = db.scalars(select(Document).where(Document.status == "DELETED")).all()
+        for doc in docs:
+            _purge_artifacts(doc)
+            db.delete(doc)
+        db.commit()
+        return len(docs)
+    finally:
+        db.close()

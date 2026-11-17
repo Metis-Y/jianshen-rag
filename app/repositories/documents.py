@@ -21,11 +21,13 @@ def get(db: Session, doc_id: int) -> Document | None:
 
 
 def page(db: Session, user_id: int, category: str | None, page: int, size: int) -> tuple[int, list]:
-    """分页列表：返回 (total, rows)。"""
-    base = select(Document).where(Document.user_id == user_id)
+    """分页列表：返回 (total, rows)；排除 DELETED（待清理）状态。"""
+    base = select(Document).where(Document.user_id == user_id, Document.status != "DELETED")
     total = (
         db.scalar(
-            select(func.count()).select_from(Document).where(Document.user_id == user_id)
+            select(func.count())
+            .select_from(Document)
+            .where(Document.user_id == user_id, Document.status != "DELETED")
         )
         or 0
     )

@@ -1,13 +1,16 @@
 """应用入口：路由、生命周期、全局异常转包络。"""
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from sqlalchemy import update
+
 from app import resp
-from app.db import Base, engine
+from app.db import Base, Document, SessionLocal, engine
 from app.routers import (
     auth,
     chat,
@@ -25,10 +28,30 @@ log = logging.getLogger("app")
 _HTTP_ERR_CODE = {400: 40010, 401: 40100, 403: 40301, 404: 40401, 413: 41301, 502: 50202}
 
 
+def _sweep_deleted_in_background() -> None:
+    """后台清理 DELETED 残留文档（幂等；失败仅记日志，不影响启动）。"""
+    try:
+        from app.services import document_service
+
+        document_service.sweep_deleted()
+    except Exception:
+        logging.getLogger("app").exception("启动清理 DELETED 残留失败")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     # 一期简化：启动时建表。多实例/迁移需求出现后再引入 Alembic
     Base.metadata.create_all(bind=engine)
+    # 启动恢复：进程中断可能残留 PROCESSING 状态的文档，统一标 FAILED 交由用户重试
+    with SessionLocal() as db:
+        db.execute(
+            update(Document)
+            .where(Document.status == "PROCESSING")
+            .values(status="FAILED", fail_reason="服务重启，处理中断，请重试")
+        )
+        db.commit()
+    # DELETED 残留清理放后台线程，避免阻塞启动（数量大也不拖慢对外服务）
+    threading.Thread(target=_sweep_deleted_in_background, daemon=True).start()
     yield
 
 

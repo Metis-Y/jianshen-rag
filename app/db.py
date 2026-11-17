@@ -43,7 +43,7 @@ class Preference(Base):
 
 
 class Document(Base):
-    """训练计划/营养资料等文档（状态机：PROCESSING → READY / FAILED）。"""
+    """训练计划/营养资料等文档（状态机：PROCESSING → READY / FAILED / DELETED）。"""
 
     __tablename__ = "document"
 
