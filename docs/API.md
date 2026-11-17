@@ -110,7 +110,8 @@ Query：`page, size, category?`
 
 ### DELETE /documents/{id} —— 删除
 
-**三处同步**：磁盘文件 + Chroma 向量（where doc_id）+ 业务记录。
+先置 `DELETED` 软标记（立刻从列表消失）→ 清磁盘原件/切片/向量 → 删记录；
+中途失败由启动扫描兜底补删，幂等可重试。
 返回：`{ "code": 1, "data": null }`。删除后相关问答 → "知识库中没有相关内容"。
 
 ## 4. 记录 /workouts、/metrics、/diets
