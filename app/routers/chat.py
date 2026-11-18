@@ -7,6 +7,7 @@ conversationId/messageId；answer_stream 已置 state["errored"] 时只发 error
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
+from app import config
 from app.auth import get_current_user
 from app.db import User
 from app.schemas import ChatIn
@@ -26,9 +27,12 @@ def chat(body: ChatIn, user: User = Depends(get_current_user)):
     def stream():
         state: dict = {}
         try:
-            yield from rag.answer_stream(
-                user, body.question, body.document_ids, body.conversation_id, state
-            )
+            if config.AGENT_MODE:
+                yield from rag.agent_answer_stream(user, body.question, body.conversation_id, state)
+            else:
+                yield from rag.answer_stream(
+                    user, body.question, body.document_ids, body.conversation_id, state
+                )
         except Exception:  # 生成器内部未兜住的最后防线：以 error 帧收尾
             rag.log.exception("SSE 流异常 user=%s", user.id)
             yield rag.sse("error", {"message": "系统错误"})

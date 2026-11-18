@@ -23,6 +23,8 @@ CHAT_MODEL = os.getenv("CHAT_MODEL", "deepseek-ai/DeepSeek-V3")
 # 思考开关（推理系模型如小米 MiMo v2.6 系列：enabled/disabled，服务端默认思考）
 # 留空 = 不传该参数、走服务端默认；注意 MiMo 思考模式下 temperature 会被忽略
 CHAT_THINKING = os.getenv("CHAT_THINKING", "").strip()
+# Agent 模式：on = 工具调用问答（模型自选工具），off = 固定管道（检索→聚合→生成）
+AGENT_MODE = os.getenv("AGENT_MODE", "on").strip().lower() != "off"
 
 # 重排：粗召回候选后用 rerank 模型精排（key 缺省复用 SILICONFLOW_API_KEY）
 RERANK_API_KEY = os.getenv("RERANK_API_KEY", SILICONFLOW_API_KEY)
