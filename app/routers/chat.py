@@ -11,6 +11,7 @@ from app import config
 from app.auth import get_current_user
 from app.db import User
 from app.schemas import ChatIn
+from app.services import agent
 from app.services import rag
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -28,7 +29,7 @@ def chat(body: ChatIn, user: User = Depends(get_current_user)):
         state: dict = {}
         try:
             if config.AGENT_MODE:
-                yield from rag.agent_answer_stream(user, body.question, body.conversation_id, state)
+                yield from agent.agent_answer_stream(user, body.question, body.conversation_id, state)
             else:
                 yield from rag.answer_stream(
                     user, body.question, body.document_ids, body.conversation_id, state
