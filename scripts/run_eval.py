@@ -1,4 +1,4 @@
-"""M4 检索评估：对 tests/eval_set.json 的题库跑纯向量检索，输出命中率报告。
+"""M4 检索评估：对 tests/eval_set.md 的题库跑纯向量检索，输出命中率报告。
 
 用法（项目根目录）：
     ./.venv/Scripts/python.exe scripts/run_eval.py
@@ -17,8 +17,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.db import SessionLocal  # noqa: E402
 from app.repositories import users  # noqa: E402
 from app.services import index  # noqa: E402
+from scripts.eval_common import load_eval_set  # noqa: E402
 
-EVAL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "eval_set.json")
+EVAL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "eval_set.md")
 DEMO_USER = "demo"
 TOPK = 5
 
@@ -28,9 +29,7 @@ def pct(n: int, total: int) -> str:
 
 
 def main() -> None:
-    with open(EVAL_PATH, encoding="utf-8") as f:
-        data = json.load(f)
-    items = data["items"]
+    items = load_eval_set(EVAL_PATH)
 
     db = SessionLocal()
     try:

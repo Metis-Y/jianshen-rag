@@ -24,13 +24,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from openai import OpenAI  # noqa: E402
 
 from app import config  # noqa: E402
+from app.services.rag import _SYSTEM_PROMPT  # noqa: E402
+from scripts.eval_common import load_eval_set  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EVAL_PATH = os.path.join(ROOT, "tests", "eval_set.json")
+EVAL_PATH = os.path.join(ROOT, "tests", "eval_set.md")
 BASE = os.getenv("EVAL_BASE_URL", "http://127.0.0.1:8000")
 DEMO_USER = os.getenv("EVAL_DEMO_USER", "demo")
 DEMO_PASS = os.getenv("EVAL_DEMO_PASS", "demo1234")
-STREAM_TIMEOUT = 120
+STREAM_TIMEOUT = 300
 
 _JUDGE_SYSTEM = (
     "你是评估裁判。判断助手回答是否覆盖了每一条要点，意思相同即算覆盖，不抠字眼。"
@@ -167,8 +169,7 @@ def main() -> None:
     except Exception:
         sys.exit(f"服务未在线（{BASE}/docs 打不开），请先启动 uvicorn")
 
-    with open(EVAL_PATH, encoding="utf-8") as f:
-        items = json.load(f)["items"]
+    items = load_eval_set(EVAL_PATH)
     if args.limit:
         items = items[: args.limit]
 
@@ -192,7 +193,7 @@ def main() -> None:
         stat = by_tag.setdefault(tag, {"covered": 0, "kp": 0, "answered": 0})
 
         answer, citations, status = _stream_chat(token, q)
-        rec = {"question": q, "tag": tag, "keyPoints": kps, "status": status}
+        rec = {"question": q, "tag": tag, "keyPoints": kps, "status": status, "answer": answer}
         if status != "ok":
             failed.append({"question": q, "tag": tag, "reason": status})
             detail.append(rec)
@@ -248,6 +249,53 @@ def main() -> None:
             indent=2,
         )
     print(f"逐题结果已写入 {res_path}")
+
+    # 人看的 MD 记录：背景 + 每题题目/回答/判卷评价，追加到 results/评测记录.md
+    md_path = os.path.join(res_dir, "评测记录.md")
+    md = []
+    md.append(f"\n---\n\n## 记录 · {dt.datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    md.append(f"- 答题模型：{config.CHAT_MODEL}")
+    md.append(f"- 判卷模型：{judge_model}")
+    md.append(f"- 模式：{'工具调用 agent' if config.AGENT_MODE else '固定管道'}（AGENT_MODE={'on' if config.AGENT_MODE else 'off'}）")
+    md.append(f"- 思考：{config.CHAT_THINKING or '服务端默认'}")
+    md.append(f"- 题数：{len(items)}")
+    if total_kp:
+        md.append(f"- 平均要点覆盖率：{total_covered}/{total_kp} = {total_covered / total_kp:.0%}")
+    md.append("\n### 系统提示词")
+    md.append("```")
+    md.append(_SYSTEM_PROMPT)
+    md.append("```")
+    md.append("\n### 按题型")
+    for tag, stat in by_tag.items():
+        cov = f"{stat['covered']}/{stat['kp']}" if stat["kp"] else "0/0"
+        md.append(f"- {tag}：{cov}（有效 {stat['answered']} 题）")
+    md.append("\n### 逐题")
+    for rec in detail:
+        md.append(f"\n#### {rec['question']}")
+        md.append(f"- 题型：{rec['tag']}")
+        if "covered" not in rec:
+            if rec.get("status") == "generation_failed":
+                md.append("- 状态：生成失败（超时或上游错误），未计入分母")
+            else:
+                md.append("- 状态：判卷失败，未计入分母")
+            continue
+        kps = rec.get("keyPoints") or []
+        covered = rec.get("covered") or []
+        missed = [kps[i] for i, c in enumerate(covered) if not c]
+        md.append(f"- 要点：{'；'.join(kps)}")
+        md.append(f"- 覆盖：{'、'.join('√' if c else '×' for c in covered)}")
+        if missed:
+            md.append(f"- 未覆盖：{'；'.join(missed)}")
+        if rec.get("notes"):
+            md.append(f"- 判官说明：{rec['notes']}")
+        if rec.get("answer"):
+            md.append("- 回答：")
+            md.append("```")
+            md.append(rec["answer"])
+            md.append("```")
+    with open(md_path, "a", encoding="utf-8") as f:
+        f.write("\n".join(md) + "\n")
+    print(f"评测记录已追加到 {md_path}")
 
 
 if __name__ == "__main__":
