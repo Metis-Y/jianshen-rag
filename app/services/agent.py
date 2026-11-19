@@ -29,24 +29,26 @@ _AGENT_TOOL_HINT = (
 _MAX_ROUNDS = 5
 
 
-def _stream_turn(client: OpenAI, messages: list[dict]) -> tuple[str, list[dict]]:
-    """流式跑一轮：攒正文 + 拼工具调用片段（arguments 是分片给的，需要按 index 拼接）。
-
-    返回 (本轮正文, 工具调用列表)。一轮里没有 tool_calls 即"最终答案"。
-    """
+def _stream_turn(client: OpenAI, messages: list[dict]) -> tuple[str, list[dict], str | None]:
+    """流式跑一轮：攒正文 + 拼工具调用片段；返回 (正文, 工具调用列表, finish_reason)。"""
     stream = client.chat.completions.create(
         model=config.CHAT_MODEL,
         messages=messages,
         tools=tools.TOOL_SCHEMAS,
         stream=True,
+        max_tokens=config.AGENT_MAX_TOKENS,
         extra_body={"thinking": {"type": config.CHAT_THINKING}} if config.CHAT_THINKING else None,
     )
     text = ""
+    finish: str | None = None
     calls: dict[int, dict] = {}
     for chunk in stream:
         if not chunk.choices:
             continue
-        delta = chunk.choices[0].delta
+        choice = chunk.choices[0]
+        if choice.finish_reason:
+            finish = choice.finish_reason
+        delta = choice.delta
         if delta.content:
             text += delta.content
         for tc in delta.tool_calls or []:
@@ -57,7 +59,7 @@ def _stream_turn(client: OpenAI, messages: list[dict]) -> tuple[str, list[dict]]
                 slot["name"] = tc.function.name
             if tc.function and tc.function.arguments:
                 slot["args"] += tc.function.arguments
-    return text, [calls[i] for i in sorted(calls)]
+    return text, [calls[i] for i in sorted(calls)], finish
 
 
 def agent_answer_stream(
@@ -91,10 +93,14 @@ def agent_answer_stream(
         final_text = ""
         try:
             for _ in range(_MAX_ROUNDS):
-                turn_text, tool_calls = _stream_turn(client, messages)
+                turn_text, tool_calls, finish = _stream_turn(client, messages)
                 if not tool_calls:
                     # 本轮就是最终答案，无需再生成
                     final_text = turn_text
+                    break
+                if finish == "length":
+                    # 被 max_tokens 截断：半截工具调用不可靠，放弃本轮，转兜底最终生成
+                    final_text = ""
                     break
 
                 # 先把 assistant 的工具调用消息回填，再逐条回填工具结果
@@ -168,6 +174,7 @@ def agent_answer_stream(
                     tools=tools.TOOL_SCHEMAS,
                     tool_choice="none",
                     stream=False,
+                    max_tokens=config.AGENT_MAX_TOKENS,
                     extra_body={"thinking": {"type": config.CHAT_THINKING}} if config.CHAT_THINKING else None,
                 )
                 final_text = resp.choices[0].message.content or ""
