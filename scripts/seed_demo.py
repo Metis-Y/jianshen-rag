@@ -6,7 +6,7 @@
 - 账号：demo / demo1234（已存在则复用）
 - 记录类数据（训练/体征/饮食）每次执行会重置为本脚本内容
 - 个人资料复用上传同款链路（解析→切分→向量索引），MD5 相同命中秒传不重复入库
-- 公共知识库：samples/public/ 由 system 账号持有，全体用户可检索；每次执行重建
+- 公共知识库：material/public/ 由 system 账号持有，全体用户可检索；每次执行重建
 - 收尾对全部 READY 文档做一次向量元数据归一（补齐 is_public 字段）
 """
 import io
@@ -83,7 +83,7 @@ def volume(exercises: list) -> float:
 
 def _upload_to(db, user, folder: str, samples: list, is_public: bool) -> None:
     for name, category in samples:
-        path = os.path.join(ROOT, "samples", folder, name)
+        path = os.path.join(ROOT, "material", folder, name)
         with open(path, "rb") as f:
             content = f.read()
         upload = UploadFile(file=io.BytesIO(content), filename=name)

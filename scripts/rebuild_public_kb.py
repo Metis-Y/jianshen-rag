@@ -3,11 +3,11 @@
 用法（项目根目录）：
     ./.venv/Scripts/python.exe scripts/rebuild_public_kb.py
 
-适用场景：往 samples/public/ 增删语料后，想快速让向量库与之一致，
+适用场景：往 material/public/ 增删语料后，想快速让向量库与之一致，
 又不想像 seed_demo.py 那样重置 demo 的记录数据。
 
 - 清空 system 账号名下的全部公共资料（磁盘 + 切片 JSON + 向量 + 记录四处同步）
-- 按 scripts/corpus_manifest.py 的清单重新上传 samples/public/ 下语料
+- 按 scripts/corpus_manifest.py 的清单重新上传 material/public/ 下语料
 - 每条语料走与接口一致的上传链路（解析 → 切分 → 向量化 → 落库）
 - 结束后打印每篇的状态与切片数，便于核对
 """
@@ -25,7 +25,7 @@ from app.services import document_service  # noqa: E402
 from scripts.corpus_manifest import PUBLIC_CORPUS  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PUBLIC_DIR = os.path.join(ROOT, "samples", "public")
+PUBLIC_DIR = os.path.join(ROOT, "material", "public")
 
 
 def main() -> None:

@@ -29,7 +29,7 @@ def chat(body: ChatIn, user: User = Depends(get_current_user)):
         state: dict = {}
         try:
             if config.AGENT_MODE:
-                yield from agent.agent_answer_stream(user, body.question, body.conversation_id, state)
+                yield from agent.agent_answer_stream(user, body.question, body.conversation_id, state, body.document_ids)
             else:
                 yield from rag.answer_stream(
                     user, body.question, body.document_ids, body.conversation_id, state
@@ -39,12 +39,13 @@ def chat(body: ChatIn, user: User = Depends(get_current_user)):
             yield rag.sse("error", {"message": "系统错误"})
             state["errored"] = True
         if not state.get("errored"):
-            yield rag.sse(
-                "done",
-                {
-                    "conversationId": state.get("conversationId"),
-                    "messageId": state.get("messageId"),
-                },
-            )
+            done_payload = {
+                "conversationId": state.get("conversationId"),
+                "messageId": state.get("messageId"),
+            }
+            # 过程指标随 done 一并返回（前端忽略未知字段，向后兼容）
+            if state.get("metrics"):
+                done_payload["metrics"] = state["metrics"]
+            yield rag.sse("done", done_payload)
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers=_SSE_HEADERS)

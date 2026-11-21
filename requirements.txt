@@ -12,3 +12,5 @@ openai
 pypdf
 python-docx
 python-dotenv
+# 评测持久化（阶段一：MLflow 本地追踪）
+mlflow

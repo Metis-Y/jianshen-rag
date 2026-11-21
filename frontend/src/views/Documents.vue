@@ -81,8 +81,10 @@ async function upload() {
     if (category.value) {
       fd.append('category', category.value)
     }
-    const data = await api.post('/documents', fd)
-    if (data && data.dedup) {
+    const data = await api.post('/documents', fd, { timeout: 300000 })
+    if (data && data.status === 'FAILED') {
+      ElMessage.error(data.failReason || '处理失败，请在列表中重试')
+    } else if (data && data.dedup) {
       ElMessage.success('该文件已存在，秒传成功')
     } else {
       ElMessage.success('上传成功')
@@ -102,8 +104,12 @@ async function upload() {
 
 async function retry(doc) {
   try {
-    await api.post(`/documents/${doc.docId}/retry`)
-    ElMessage.success('已重新提交处理')
+    const data = await api.post(`/documents/${doc.docId}/retry`, null, { timeout: 300000 })
+    if (data && data.status === 'FAILED') {
+      ElMessage.error(data.failReason || '重试后仍失败')
+    } else {
+      ElMessage.success('已重新提交处理')
+    }
     await fetchList()
   } catch (e) {
     // 错误信息已由拦截器统一 alert，不重复提示

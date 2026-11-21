@@ -1,7 +1,7 @@
 """M5 端到端评估：真实问答 + LLM-as-judge 要点覆盖率（09 方案实现）。
 
 用法（项目根目录，需服务已在线）：
-    ./.venv/Scripts/python.exe scripts/run_e2e_eval.py [--limit N] [--judge-model ...]
+    ./.venv/Scripts/python.exe scripts/eval_end_to_end.py [--limit N] [--judge-model ...]
 
 - 前置：http://127.0.0.1:8000/docs 健康、demo 账号存在（否则先跑 seed_demo.py）
 - 走真实 POST /api/chat（demo token），流式读完整回答 + citations
@@ -28,7 +28,7 @@ from app.services.rag import _SYSTEM_PROMPT  # noqa: E402
 from scripts.eval_common import load_eval_set  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EVAL_PATH = os.path.join(ROOT, "tests", "eval_set.md")
+EVAL_PATH = os.path.join(ROOT, "docs", "端到端题库.md")
 BASE = os.getenv("EVAL_BASE_URL", "http://127.0.0.1:8000")
 DEMO_USER = os.getenv("EVAL_DEMO_USER", "demo")
 DEMO_PASS = os.getenv("EVAL_DEMO_PASS", "demo1234")

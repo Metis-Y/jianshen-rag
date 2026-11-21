@@ -117,7 +117,7 @@ def remove_document(doc_id: int) -> None:
     _collection.delete(where={"doc_id": int(doc_id)})
 
 
-def _rerank(question: str, hits: list[dict]) -> list[dict]:
+def _rerank(question: str, hits: list[dict], with_scores: bool = False) -> list[dict]:
     """rerank 精排：按"问题 ↔ 文本"语义相关性打分，返回降序 hits。
 
     API 协议：POST {base}/rerank，body {model, query, documents[]}，
@@ -139,7 +139,13 @@ def _rerank(question: str, hits: list[dict]) -> list[dict]:
     # urlopen：发起请求并读取响应体；timeout=30 防止 rerank 服务无响应拖垮问答
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-    ordered = [hits[r["index"]] for r in data.get("results", [])]
+    ordered: list[dict] = []
+    for rank, r in enumerate(data.get("results", []), start=1):
+        h = hits[r["index"]]
+        if with_scores:
+            h["rerank_score"] = r.get("relevance_score")
+            h["rerank_rank"] = rank
+        ordered.append(h)
     # 兜底：API 返回不全时，把遗漏候选按粗排顺序补在末尾
     seen = {id(obj) for obj in ordered}
     ordered += [h for h in hits if id(h) not in seen]
@@ -151,10 +157,13 @@ def retrieve(
     question: str,
     top_k: int = config.TOPK,
     document_ids: list[int] | None = None,
+    with_scores: bool = False,
 ) -> list[dict]:
     """私有向量检索：默认全库（本人文档）；document_ids 非空时限定文档范围。
 
     返回按相似度排序的 [{doc_id, doc_title, seq, source, text}]（text 取明文）。
+    with_scores=True 时额外附 distance（向量距离）、recall_rank（粗排名次）、
+    rerank_score / rerank_rank（精排分数与名次，未走精排则缺失）。
     """
     # 可见集合：本人文档 + 公共知识库文档
     base: dict = {
@@ -188,23 +197,26 @@ def retrieve(
     ids = result.get("ids") or [[]]
     metas = result.get("metadatas") or [[]]
     docs = result.get("documents") or [[]]
+    dists = result.get("distances") or [[]]
 
     hits: list[dict] = []
     for i, meta in enumerate(metas[0]):
-        hits.append(
-            {
-                "doc_id": meta.get("doc_id"),
-                "doc_title": (meta.get("doc_title") or ""),
-                "seq": meta.get("seq", 0),
-                "source": (meta.get("source") or ""),
-                "text": docs[0][i] if i < len(docs[0]) else "",
-            }
-        )
+        hit = {
+            "doc_id": meta.get("doc_id"),
+            "doc_title": (meta.get("doc_title") or ""),
+            "seq": meta.get("seq", 0),
+            "source": (meta.get("source") or ""),
+            "text": docs[0][i] if i < len(docs[0]) else "",
+        }
+        if with_scores:
+            hit["distance"] = dists[0][i] if i < len(dists[0]) else None
+            hit["recall_rank"] = i + 1
+        hits.append(hit)
 
     # 精排：候选比 top_k 多且配置了 rerank 时才走精排；失败降级用粗排顺序，不拖崩问答
     if len(hits) > int(top_k) and config.RERANK_API_KEY:
         try:
-            hits = _rerank(question, hits)
+            hits = _rerank(question, hits, with_scores)
         except Exception:
             log.warning("rerank 失败，降级使用粗排结果")
     return _diversify(hits, int(top_k))

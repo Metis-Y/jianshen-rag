@@ -9,6 +9,7 @@
 """
 import json
 import logging
+import time
 # Iterator：标注 SSE 生成器逐帧产出 str 的返回类型
 from typing import Iterator
 
@@ -252,6 +253,7 @@ def answer_stream(
                 model=config.CHAT_MODEL,
                 messages=messages,
                 stream=True,
+                stream_options={"include_usage": True},
                 # 思考开关（MiMo v2.6 用 thinking.type）：配置了 CHAT_THINKING 才透传，留空=服务端默认
                 extra_body={"thinking": {"type": config.CHAT_THINKING}} if config.CHAT_THINKING else None,
             )
@@ -263,14 +265,25 @@ def answer_stream(
             return
 
         full = ""
+        usage: dict | None = None
+        t_start = time.perf_counter()
+        first_token_ms: float | None = None
         try:
-            # 逐 chunk 读取增量；choices 为空（心跳包/空包）时跳过
+            # 逐 chunk 读取增量；choices 为空（心跳/空包或仅带 usage 的收尾包）时跳过正文
             for chunk in stream:
+                if getattr(chunk, "usage", None):  # 收尾只带 usage 的包：先记下
+                    usage = {
+                        "prompt_tokens": chunk.usage.prompt_tokens,
+                        "completion_tokens": chunk.usage.completion_tokens,
+                        "total_tokens": chunk.usage.total_tokens,
+                    }
                 if not chunk.choices:
                     continue
                 # 取首个候选的增量文本；None 表示该 chunk 没有正文（如仅带角色信息）
                 delta = chunk.choices[0].delta.content
                 if delta:
+                    if first_token_ms is None:
+                        first_token_ms = round((time.perf_counter() - t_start) * 1000)
                     full += delta
                     # 边收边推，同时累积 full；流结束后用 full 落库完整回答
                     yield sse("message", {"delta": delta})
@@ -280,6 +293,15 @@ def answer_stream(
             state["errored"] = True
             yield sse("error", {"message": "回答生成中断，请重试"})
             return
+
+        # 过程指标：随 done 事件回传，供端到端评估采集 usage/延迟/引用数
+        state["metrics"] = {
+            "mode": "rag",
+            "latency_ms": round((time.perf_counter() - t_start) * 1000),
+            "first_token_ms": first_token_ms,
+            "usage": usage,
+            "citations": len(citations),
+        }
 
         # 6) 流结束：落库（与上文聚合同一 session），失败仅记日志不影响已推流
         try:

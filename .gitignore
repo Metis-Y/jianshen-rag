@@ -21,3 +21,6 @@ data/uploads/
 /design/
 # 评估结果（运行产物，不入版本控制）
 /results/
+# MLflow 本地追踪存储（运行产物）
+/mlflow.db
+/mlartifacts/

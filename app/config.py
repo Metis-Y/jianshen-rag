@@ -26,7 +26,7 @@ CHAT_THINKING = os.getenv("CHAT_THINKING", "").strip()
 # Agent 模式：on = 工具调用问答（模型自选工具），off = 固定管道（检索→聚合→生成）
 AGENT_MODE = os.getenv("AGENT_MODE", "on").strip().lower() != "off"
 # Agent 每轮/最终回答的最大输出 token 数（被截断时 finish_reason=length）
-AGENT_MAX_TOKENS = int(os.getenv("AGENT_MAX_TOKENS", "4096"))
+AGENT_MAX_OUTPUT_TOKENS = int(os.getenv("AGENT_MAX_OUTPUT_TOKENS", "4096"))
 
 # 重排：粗召回候选后用 rerank 模型精排（key 缺省复用 SILICONFLOW_API_KEY）
 RERANK_API_KEY = os.getenv("RERANK_API_KEY", SILICONFLOW_API_KEY)

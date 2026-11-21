@@ -53,16 +53,16 @@ TOOL_SCHEMAS: list[dict] = [
 ]
 
 
-def _search_docs(user, db, args: dict) -> dict:
+def _search_docs(user, db, args: dict, document_ids: list[int] | None = None) -> dict:
     try:
         p = SearchDocsArgs.model_validate(args or {})
     except Exception as e:
         return {"error": f"参数错误：{e}"}
-    hits = index.retrieve(user.id, p.query, top_k=p.top_k)
+    hits = index.retrieve(user.id, p.query, top_k=p.top_k, document_ids=document_ids)
     return {"data": hits}
 
 
-def _get_my_data(user, db, args: dict) -> dict:
+def _get_my_data(user, db, args: dict, document_ids: list[int] | None = None) -> dict:
     return {"data": summarize(db, user.id)}
 
 
@@ -72,12 +72,12 @@ _EXECUTORS = {
 }
 
 
-def execute(user, db, name: str, args: dict) -> dict:
+def execute(user, db, name: str, args: dict, document_ids: list[int] | None = None) -> dict:
     """统一执行入口：按名查表 → 校验并执行 → 异常兜底回填 error。"""
     if name not in _EXECUTORS:
         return {"error": f"未知工具：{name}"}
     try:
-        return _EXECUTORS[name](user, db, args or {})
+        return _EXECUTORS[name](user, db, args or {}, document_ids)
     except Exception as e:
         log.warning("工具 %s 执行失败: %s", name, e)
         return {"error": f"工具执行失败：{e}"}

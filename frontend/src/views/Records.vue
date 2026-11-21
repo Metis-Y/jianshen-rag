@@ -216,7 +216,7 @@ async function submitDiet() {
   }
   // 三餐均可选填：空的餐次不提交
   const meals = Object.entries(mealInputs.value)
-    .map(([meal, content]) => ({ meal, content: String(content || '').trim() }))
+    .map(([meal, content]) => ({ meal: MEAL_LABELS[meal] || meal, content: String(content || '').trim() }))
     .filter((m) => m.content)
   if (!meals.length) {
     ElMessage.warning('请至少填写一餐')
